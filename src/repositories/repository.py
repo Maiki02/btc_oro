@@ -1,12 +1,14 @@
 """
 Capa de repositorio para acceso a la base de datos MongoDB.
+Implementa el patrón UPSERT para consolidar precios diarios.
 """
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, PyMongoError
-from typing import Optional
+from typing import Optional, Dict, Any
+from datetime import datetime
 import logging
 
-from ..models.schemas import AssetPriceRecord
+from ..models.schemas import DailyPriceRecord
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -16,16 +18,19 @@ logger = logging.getLogger(__name__)
 class PriceRepository:
     """
     Repositorio para manejar la persistencia de precios en MongoDB.
+    
+    Implementa la estructura de esquema consolidada donde todos los precios
+    de un día se almacenan en un único documento, organizados por activo y hora.
     """
     
-    def __init__(self, mongo_uri: str, db_name: str, collection_name: str = "asset_prices"):
+    def __init__(self, mongo_uri: str, db_name: str, collection_name: str = "daily_prices"):
         """
         Inicializa el repositorio y la conexión con MongoDB.
         
         Args:
             mongo_uri: URI de conexión a MongoDB
             db_name: Nombre de la base de datos
-            collection_name: Nombre de la colección (default: "asset_prices")
+            collection_name: Nombre de la colección (default: "daily_prices")
         """
         self.mongo_uri = mongo_uri
         self.db_name = db_name
@@ -53,6 +58,9 @@ class PriceRepository:
             self.db = self.client[self.db_name]
             self.collection = self.db[self.collection_name]
             
+            # Crear índices
+            self._create_indexes()
+            
             logger.info(f"Conexión exitosa a MongoDB: {self.db_name}.{self.collection_name}")
             
         except ConnectionFailure as e:
@@ -62,57 +70,258 @@ class PriceRepository:
             logger.error(f"Error inesperado al conectar con MongoDB: {e}")
             raise
     
-    def save_price_record(self, record: AssetPriceRecord) -> str:
+    def _create_indexes(self):
         """
-        Guarda un registro de precio en la colección.
-        
-        Args:
-            record: Objeto AssetPriceRecord a guardar
-        
-        Returns:
-            ID del documento insertado como string
-        
-        Raises:
-            PyMongoError: Si hay un error al guardar en MongoDB
+        Crea índices para optimizar las consultas.
         """
         try:
-            # Convertir el modelo Pydantic a diccionario
-            record_dict = record.model_dump()
+            # Índice único en 'date' para búsquedas rápidas
+            self.collection.create_index("date", unique=True)
+            logger.info("Índices creados exitosamente")
+        except Exception as e:
+            logger.warning(f"No se pudieron crear índices: {e}")
+    
+    def upsert_daily_prices(
+        self,
+        date: str,
+        asset: str,
+        hour: str,
+        price_data: Dict[str, Any]
+    ) -> bool:
+        """
+        Inserta o actualiza los precios diarios usando el patrón UPSERT.
+        
+        Si el documento del día existe, actualiza los precios del activo/hora específicos.
+        Si no existe, lo crea con la estructura consolidada.
+        
+        Ejemplo:
+            {
+                "date": "2025-10-24",
+                "prices": {
+                    "BTC": {
+                        "hour_10": { price_usd, timestamp_utc, source_api, collection_time_art },
+                        "hour_17": { ... }
+                    },
+                    "XAU": { ... }
+                }
+            }
+        
+        Args:
+            date: Fecha en formato YYYY-MM-DD
+            asset: Código del activo (ej: "BTC", "XAU")
+            hour: Hora formateada (ej: "hour_10", "hour_17")
+            price_data: Dict con price_usd, timestamp_utc, source_api, collection_time_art
+        
+        Returns:
+            True si la operación fue exitosa, False en caso contrario
+        """
+        try:
+            if not self.collection:
+                logger.warning("Colección MongoDB no disponible")
+                return False
             
-            logger.info(f"Guardando registro en MongoDB: {record.asset_name} - ${record.price_usd}")
+            # Construir el documento a insertar/actualizar
+            update_doc = {
+                "$set": {
+                    f"prices.{asset}.{hour}": price_data,
+                    "date": date,
+                    "updated_at": datetime.utcnow()
+                },
+                "$setOnInsert": {
+                    "created_at": datetime.utcnow()
+                }
+            }
             
-            result = self.collection.insert_one(record_dict)
+            # Realizar el upsert
+            result = self.collection.update_one(
+                {"date": date},
+                update_doc,
+                upsert=True
+            )
             
-            logger.info(f"Registro guardado exitosamente con ID: {result.inserted_id}")
+            if result.upserted_id:
+                logger.info(f"Documento creado para {date}: {result.upserted_id}")
+            elif result.modified_count > 0:
+                logger.info(f"Documento actualizado para {date} - {asset}/{hour}")
+            else:
+                logger.debug(f"Sin cambios en documento para {date}")
             
-            return str(result.inserted_id)
+            return True
             
         except PyMongoError as e:
-            logger.error(f"Error al guardar registro en MongoDB: {e}")
-            raise
+            logger.error(f"Error al realizar upsert: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Error inesperado al guardar registro: {e}")
-            raise
+            logger.error(f"Error inesperado en upsert_daily_prices: {e}")
+            return False
     
-    def get_latest_price(self, asset_name: str) -> Optional[dict]:
+    def save_price_record(self, record: DailyPriceRecord) -> bool:
+        """
+        Guarda un registro de precios diario completo (estructura consolidada).
+        
+        Args:
+            record: Instancia de DailyPriceRecord
+        
+        Returns:
+            True si la operación fue exitosa, False en caso contrario
+        """
+        try:
+            if not self.collection:
+                logger.warning("Colección MongoDB no disponible")
+                return False
+            
+            # Convertir el modelo Pydantic a dict
+            record_dict = record.model_dump()
+            
+            # Realizar upsert completo
+            result = self.collection.update_one(
+                {"date": record.date},
+                {
+                    "$set": record_dict,
+                    "$setOnInsert": {
+                        "created_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
+            
+            logger.info(f"Registro guardado/actualizado para {record.date}")
+            return True
+            
+        except PyMongoError as e:
+            logger.error(f"Error al guardar registro: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error inesperado en save_price_record: {e}")
+            return False
+    
+    def get_daily_prices(self, date: str) -> Optional[Dict[str, Any]]:
+        """
+        Obtiene los precios para un día específico.
+        
+        Args:
+            date: Fecha en formato YYYY-MM-DD
+        
+        Returns:
+            Dict con el documento MongoDB o None si no existe
+        """
+        try:
+            if not self.collection:
+                logger.warning("Colección MongoDB no disponible")
+                return None
+            
+            result = self.collection.find_one({"date": date})
+            if result:
+                # Remover el ObjectId para serialización
+                result.pop("_id", None)
+            
+            return result
+            
+        except PyMongoError as e:
+            logger.error(f"Error al obtener precios diarios: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error inesperado en get_daily_prices: {e}")
+            return None
+    
+    def get_date_range(
+        self,
+        start_date: str,
+        end_date: str
+    ) -> list:
+        """
+        Obtiene precios para un rango de fechas.
+        
+        Args:
+            start_date: Fecha inicio (YYYY-MM-DD)
+            end_date: Fecha fin (YYYY-MM-DD)
+        
+        Returns:
+            Lista de documentos MongoDB ordenados por fecha
+        """
+        try:
+            if not self.collection:
+                logger.warning("Colección MongoDB no disponible")
+                return []
+            
+            results = list(self.collection.find({
+                "date": {
+                    "$gte": start_date,
+                    "$lte": end_date
+                }
+            }).sort("date", 1))
+            
+            # Remover _id para serialización
+            for doc in results:
+                doc.pop("_id", None)
+            
+            return results
+            
+        except PyMongoError as e:
+            logger.error(f"Error al obtener rango de fechas: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Error inesperado en get_date_range: {e}")
+            return []
+    
+    def get_latest_price(self, asset_name: str) -> Optional[Dict[str, Any]]:
         """
         Obtiene el último precio registrado para un activo.
         
+        Nota: Con la nueva estructura consolidada, esto busca el documento
+        más reciente que tenga datos para el activo especificado.
+        
         Args:
-            asset_name: Nombre del activo (BTC, XAU)
+            asset_name: Código del activo (BTC, XAU)
         
         Returns:
-            Diccionario con el último registro o None si no existe
+            Dict con el último registro o None si no existe
         """
         try:
+            if not self.collection:
+                logger.warning("Colección MongoDB no disponible")
+                return None
+            
+            # Buscar el documento más reciente que tenga datos para este activo
             result = self.collection.find_one(
-                {'asset_name': asset_name},
-                sort=[('timestamp_utc', -1)]
+                {f"prices.{asset_name}": {"$exists": True}},
+                sort=[("date", -1)]
             )
+            
+            if result:
+                result.pop("_id", None)
+            
             return result
+            
         except PyMongoError as e:
             logger.error(f"Error al obtener último precio: {e}")
-            raise
+            return None
+        except Exception as e:
+            logger.error(f"Error inesperado en get_latest_price: {e}")
+            return None
+    
+    def delete_collection(self) -> bool:
+        """
+        Elimina toda la colección (útil para testing).
+        
+        Returns:
+            True si fue exitosa, False en caso contrario
+        """
+        try:
+            if not self.collection:
+                logger.warning("Colección MongoDB no disponible")
+                return False
+            
+            result = self.collection.delete_many({})
+            logger.info(f"Colección eliminada: {result.deleted_count} documentos removidos")
+            return True
+            
+        except PyMongoError as e:
+            logger.error(f"Error al eliminar colección: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error inesperado en delete_collection: {e}")
+            return False
     
     def close(self):
         """

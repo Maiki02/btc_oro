@@ -166,6 +166,185 @@ class GoogleSheetRecord(BaseModel):
             price_usd=record.price_usd,
             source=record.source_api
         )
+    
+    @classmethod
+    def from_daily_price_record(cls, daily_record: 'DailyPriceRecord') -> List['GoogleSheetRecord']:
+        """
+        Convierte un DailyPriceRecord (estructura consolidada MongoDB) a múltiples GoogleSheetRecord.
+        
+        Genera una fila por cada combinación de activo-hora en el registro diario.
+        
+        Ejemplo:
+            DailyPriceRecord con BTC (hour_10, hour_17) y XAU (hour_10, hour_17)
+            → Retorna 4 GoogleSheetRecord (una por cada combinación)
+        
+        Args:
+            daily_record: DailyPriceRecord desde MongoDB
+        
+        Returns:
+            Lista de GoogleSheetRecord (una por activo-hora)
+        """
+        records = []
+        
+        for asset_name, hourly_prices in daily_record.prices.items():
+            for hour_key, snapshot in hourly_prices.items():
+                # Extraer la hora del formato "hour_XX"
+                hour_value = int(hour_key.split('_')[1])
+                
+                # Construir timestamp de la hora específica en ART
+                # Usamos collection_time_art del snapshot como referencia de la fecha
+                time_art = snapshot.collection_time_art.replace(
+                    hour=hour_value,
+                    minute=0,
+                    second=0,
+                    microsecond=0
+                )
+                
+                record = cls(
+                    date=daily_record.date,
+                    time=time_art.strftime('%H:%M'),
+                    asset=asset_name,
+                    price_usd=snapshot.price_usd,
+                    source=snapshot.source_api
+                )
+                records.append(record)
+        
+        return records
+
+# =============================================================================
+# NUEVA ESTRUCTURA - POR DÍA (PROPUESTA OPTIMIZADA)
+# =============================================================================
+
+class PriceSnapshot(BaseModel):
+    """
+    Modelo para un snapshot de precio en una hora específica.
+    """
+    price_usd: float = Field(..., description="Precio en USD")
+    timestamp_utc: datetime = Field(..., description="Timestamp en UTC")
+    source_api: str = Field(..., description="API de origen (coingecko, goldapi)")
+    collection_time_art: datetime = Field(..., description="Hora de recolección en ART")
+    
+    @validator('source_api')
+    def validate_source_api(cls, v):
+        allowed_sources = ['coingecko', 'goldapi']
+        if v not in allowed_sources:
+            raise ValueError(f'source_api debe ser uno de: {allowed_sources}')
+        return v
+
+
+class HourlyPrice(BaseModel):
+    """
+    Modelo para los precios de un activo en diferentes horas del día.
+    Las claves son strings como "hour_10", "hour_17", etc.
+    """
+    pass  # Será un Dict[str, PriceSnapshot] en DailyPriceRecord
+
+
+class DailyPriceRecord(BaseModel):
+    """
+    Modelo para un registro diario consolidado de todos los activos y horas.
+    
+    Estructura del documento en MongoDB:
+    {
+      "_id": ObjectId(...),
+      "date": "2025-10-24",
+      "date_art": ISODate("2025-10-24T00:00:00-03:00"),
+      "prices": {
+        "BTC": {
+          "hour_10": {
+            "price_usd": 43250.75,
+            "timestamp_utc": ISODate("2025-10-24T13:00:00Z"),
+            "source_api": "coingecko",
+            "collection_time_art": ISODate("2025-10-24T10:00:00-03:00")
+          },
+          "hour_17": {...}
+        },
+        "XAU": {
+          "hour_10": {...},
+          "hour_17": {...}
+        }
+      }
+    }
+    """
+    date: str = Field(..., description="Fecha en formato YYYY-MM-DD")
+    date_art: datetime = Field(..., description="Datetime del inicio del día en ART")
+    # prices es un diccionario anidado: {asset_name: {hour_XX: PriceSnapshot}}
+    prices: Dict[str, Dict[str, PriceSnapshot]] = Field(
+        default_factory=dict,
+        description="Estructura: {asset_name: {hour_XX: PriceSnapshot}}"
+    )
+    
+    class Config:
+        # Permitir tipos complejos
+        arbitrary_types_allowed = True
+    
+    def add_price(self, asset_name: str, hour: int, price_snapshot: PriceSnapshot):
+        """
+        Agrega un precio a un activo en una hora específica.
+        
+        Args:
+            asset_name: Nombre del activo (BTC, XAU, etc.)
+            hour: Hora del día (0-23)
+            price_snapshot: Snapshot del precio
+        """
+        if asset_name not in self.prices:
+            self.prices[asset_name] = {}
+        
+        hour_key = f"hour_{hour:02d}"
+        self.prices[asset_name][hour_key] = price_snapshot
+    
+    def get_price(self, asset_name: str, hour: int) -> Optional[PriceSnapshot]:
+        """
+        Obtiene el precio de un activo en una hora específica.
+        
+        Args:
+            asset_name: Nombre del activo
+            hour: Hora del día
+        
+        Returns:
+            PriceSnapshot o None si no existe
+        """
+        hour_key = f"hour_{hour:02d}"
+        return self.prices.get(asset_name, {}).get(hour_key)
+    
+    def get_all_prices_for_asset(self, asset_name: str) -> Dict[str, PriceSnapshot]:
+        """
+        Obtiene todos los precios de un activo durante el día.
+        
+        Args:
+            asset_name: Nombre del activo
+        
+        Returns:
+            Diccionario con todos los precios por hora
+        """
+        return self.prices.get(asset_name, {})
+    
+    def to_asset_price_records(self) -> List[AssetPriceRecord]:
+        """
+        Convierte el registro diario a una lista de AssetPriceRecord (formato antiguo).
+        Útil para compatibilidad con código existente.
+        
+        Returns:
+            Lista de AssetPriceRecord
+        """
+        records = []
+        for asset_name, hourly_prices in self.prices.items():
+            for hour_key, snapshot in hourly_prices.items():
+                # Extraer la hora del formato "hour_XX"
+                hour = int(hour_key.split('_')[1])
+                
+                record = AssetPriceRecord(
+                    asset_name=asset_name,
+                    price_usd=snapshot.price_usd,
+                    timestamp_utc=snapshot.timestamp_utc,
+                    source_api=snapshot.source_api,
+                    collection_time_art=snapshot.collection_time_art,
+                    target_hour_art=hour
+                )
+                records.append(record)
+        
+        return records
+
 
 class ServiceResponse(BaseModel):
     """

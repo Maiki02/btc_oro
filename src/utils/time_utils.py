@@ -67,6 +67,18 @@ def get_date_string_for_metals_api() -> str:
     now_art = get_current_time_art()
     return now_art.strftime('%Y-%m-%d')
 
+def get_art_date_string() -> str:
+    """
+    Retorna la fecha actual en formato YYYY-MM-DD (zona horaria ART).
+    
+    Utilizada para indexar documentos consolidados diarios en MongoDB.
+    
+    Returns:
+        Fecha en formato YYYY-MM-DD (ej: "2025-10-24")
+    """
+    now_art = get_current_time_art()
+    return now_art.strftime('%Y-%m-%d')
+
 def find_closest_price(prices_data: list, target_timestamp_utc: datetime) -> Tuple[float, datetime]:
     """
     Encuentra el precio más cercano al timestamp objetivo.

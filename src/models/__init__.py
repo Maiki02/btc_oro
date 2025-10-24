@@ -2,21 +2,23 @@
 Módulo de modelos de datos.
 """
 from .schemas import (
-    # CoinGeckoPricePoint,  # COMENTADO
-    # CoinGeckoResponse,  # COMENTADO
-    # MetalsApiResponse,  # COMENTADO
-    GoldApiResponse,  # NUEVO
+    CoinGeckoPricePoint,
+    CoinGeckoResponse,
+    GoldApiResponse,
     AssetPriceRecord,
+    PriceSnapshot,
+    DailyPriceRecord,
     GoogleSheetRecord,
     ServiceResponse
 )
 
 __all__ = [
-    # 'CoinGeckoPricePoint',  # COMENTADO
-    # 'CoinGeckoResponse',  # COMENTADO
-    # 'MetalsApiResponse',  # COMENTADO
-    'GoldApiResponse',  # NUEVO
+    'CoinGeckoPricePoint',
+    'CoinGeckoResponse',
+    'GoldApiResponse',
     'AssetPriceRecord',
+    'PriceSnapshot',
+    'DailyPriceRecord',
     'GoogleSheetRecord',
     'ServiceResponse'
 ]

@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from src.config import Config
 from src.clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient
-# from src.repositories import PriceRepository  # COMENTADO - MongoDB
+from src.repositories import PriceRepository
 from src.services import PriceDataService
 from src.handlers import PriceHandler
 from src.routes import Router
@@ -126,18 +126,24 @@ def initialize_dependencies():
     goldapi_client = GoldApiClient(Config.GOLDAPI_KEY)
     google_sheet_client = GoogleSheetClient(Config.GOOGLE_SHEET_API_URL)
     
-    # Inicializar repositorio (COMENTADO - MongoDB)
-    # price_repository = PriceRepository(
-    #     mongo_uri=Config.MONGO_URI,
-    #     db_name=Config.MONGO_DB_NAME
-    # )
+    # Inicializar repositorio
+    try:
+        price_repository = PriceRepository(
+            mongo_uri=Config.MONGO_URI,
+            db_name=Config.MONGO_DB_NAME
+        )
+        logger.info("✓ Repository MongoDB inicializado correctamente")
+    except Exception as e:
+        logger.error(f"Error al conectar MongoDB: {e}")
+        logger.warning("⚠️  MongoDB no disponible. El servicio continuará pero sin persistencia.")
+        price_repository = None
     
     # Inicializar servicio
     price_service = PriceDataService(
         coingecko_client=coingecko_client,
         goldapi_client=goldapi_client,
         google_sheet_client=google_sheet_client,
-        # price_repository=price_repository  # COMENTADO - MongoDB
+        price_repository=price_repository
     )
     
     # Inicializar handler
