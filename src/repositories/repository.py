@@ -85,45 +85,54 @@ class PriceRepository:
         self,
         date: str,
         asset: str,
-        hour: str,
-        price_data: Dict[str, Any]
+        hour: int,
+        price_entry_dict: Dict[str, Any]
     ) -> bool:
         """
         Inserta o actualiza los precios diarios usando el patrón UPSERT.
         
-        Si el documento del día existe, actualiza los precios del activo/hora específicos.
-        Si no existe, lo crea con la estructura consolidada.
+        NUEVO: Con estructura array-based.
+        - Si el documento no existe, lo crea.
+        - Si la entrada (asset/hour) existe, la reemplaza.
+        - Usa $pull para remover entrada vieja y $push para añadir la nueva.
         
         Ejemplo:
-            {
-                "date": "2025-10-24",
-                "prices": {
-                    "BTC": {
-                        "hour_10": { price_usd, timestamp_utc, source_api, collection_time_art },
-                        "hour_17": { ... }
-                    },
-                    "XAU": { ... }
-                }
+            date: "2025-10-24"
+            asset: "BTC"
+            hour: 15
+            price_entry_dict: {
+                "hour": 15,
+                "price_usd": 43300.50,
+                "timestamp_utc": "2025-10-24T18:15:00Z",
+                "source_api": "coingecko",
+                "collection_time_art": "2025-10-24T15:15:00-03:00"
             }
         
         Args:
             date: Fecha en formato YYYY-MM-DD
             asset: Código del activo (ej: "BTC", "XAU")
-            hour: Hora formateada (ej: "hour_10", "hour_17")
-            price_data: Dict con price_usd, timestamp_utc, source_api, collection_time_art
+            hour: Hora (0-23)
+            price_entry_dict: Dict con datos de la entrada de precio
         
         Returns:
             True si la operación fue exitosa, False en caso contrario
         """
         try:
-            if not self.collection:
+            if self.collection is None:
                 logger.warning("Colección MongoDB no disponible")
                 return False
             
             # Construir el documento a insertar/actualizar
+            # Usar $pull para remover la entrada anterior (si existe)
+            # y $push para agregar la nueva
             update_doc = {
+                "$pull": {
+                    f"prices.{asset}": {"hour": hour}  # Remover si existe
+                },
+                "$push": {
+                    f"prices.{asset}": price_entry_dict  # Añadir nueva
+                },
                 "$set": {
-                    f"prices.{asset}.{hour}": price_data,
                     "date": date,
                     "updated_at": datetime.utcnow()
                 },
@@ -142,7 +151,7 @@ class PriceRepository:
             if result.upserted_id:
                 logger.info(f"Documento creado para {date}: {result.upserted_id}")
             elif result.modified_count > 0:
-                logger.info(f"Documento actualizado para {date} - {asset}/{hour}")
+                logger.info(f"Documento actualizado para {date} - {asset}/hour_{hour}")
             else:
                 logger.debug(f"Sin cambios en documento para {date}")
             
@@ -166,12 +175,16 @@ class PriceRepository:
             True si la operación fue exitosa, False en caso contrario
         """
         try:
-            if not self.collection:
+            if self.collection is None:
                 logger.warning("Colección MongoDB no disponible")
                 return False
             
             # Convertir el modelo Pydantic a dict
-            record_dict = record.model_dump()
+            # mode='json' serializa datetimes a ISO 8601 strings, pero MongoDB los convierte de vuelta a objetos ISODate
+            record_dict = record.model_dump(mode='json')
+            
+            logger.info(f"Guardando DailyPriceRecord para {record.date}:")
+            logger.info(f"  Activos: {list(record_dict['prices'].keys())}")
             
             # Realizar upsert completo
             result = self.collection.update_one(
@@ -185,14 +198,20 @@ class PriceRepository:
                 upsert=True
             )
             
-            logger.info(f"Registro guardado/actualizado para {record.date}")
+            if result.upserted_id:
+                logger.info(f"✓ Documento creado: {result.upserted_id}")
+            elif result.modified_count > 0:
+                logger.info(f"✓ Documento actualizado")
+            else:
+                logger.info(f"✓ Documento sin cambios (ya existe)")
+            
             return True
             
         except PyMongoError as e:
-            logger.error(f"Error al guardar registro: {e}")
+            logger.error(f"Error PyMongo al guardar registro: {e}")
             return False
         except Exception as e:
-            logger.error(f"Error inesperado en save_price_record: {e}")
+            logger.error(f"Error inesperado en save_price_record: {e}", exc_info=True)
             return False
     
     def get_daily_prices(self, date: str) -> Optional[Dict[str, Any]]:
@@ -206,7 +225,7 @@ class PriceRepository:
             Dict con el documento MongoDB o None si no existe
         """
         try:
-            if not self.collection:
+            if self.collection is None:
                 logger.warning("Colección MongoDB no disponible")
                 return None
             
@@ -240,7 +259,7 @@ class PriceRepository:
             Lista de documentos MongoDB ordenados por fecha
         """
         try:
-            if not self.collection:
+            if self.collection is None:
                 logger.warning("Colección MongoDB no disponible")
                 return []
             
@@ -278,7 +297,7 @@ class PriceRepository:
             Dict con el último registro o None si no existe
         """
         try:
-            if not self.collection:
+            if self.collection is None:
                 logger.warning("Colección MongoDB no disponible")
                 return None
             
@@ -308,7 +327,7 @@ class PriceRepository:
             True si fue exitosa, False en caso contrario
         """
         try:
-            if not self.collection:
+            if self.collection is None:
                 logger.warning("Colección MongoDB no disponible")
                 return False
             

@@ -10,7 +10,7 @@ import pytz
 from ..clients.api_clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient
 # from ..repositories.repository import PriceRepository  # COMENTADO - MongoDB
 from ..models.schemas import (
-    PriceSnapshot, DailyPriceRecord, GoogleSheetRecord, ServiceResponse, AssetPriceRecord
+    PriceEntry, DailyPriceRecord, GoogleSheetRecord, ServiceResponse, AssetPriceRecord
 )
 from ..utils.time_utils import (
     get_current_time_art, 
@@ -78,12 +78,23 @@ class PriceDataService:
             logger.info(f"Iniciando proceso de obtención de precios. Hora ART: {now_art}")
             
             # 2. Determinar la hora objetivo
+            # Elegir la última hora objetivo que ya ocurrió (más segura que "la más cercana en el futuro").
+            # Si ninguna hora objetivo es <= hora actual, se toma la última del día anterior.
             if target_hour is None:
                 current_hour = now_art.hour
-                if current_hour in Config.TARGET_HOURS:
+                sorted_hours = sorted(Config.TARGET_HOURS)
+                # Si estamos exactamente en una hora objetivo, la usamos
+                if current_hour in sorted_hours:
                     target_hour = current_hour
                 else:
-                    target_hour = min(Config.TARGET_HOURS, key=lambda h: abs(h - current_hour))
+                    # Buscar la última hora objetivo que sea <= hora actual
+                    chosen = None
+                    for h in reversed(sorted_hours):
+                        if current_hour >= h:
+                            chosen = h
+                            break
+                    # Si no hay ninguna hora objetivo pasada hoy, tomar la última del día anterior
+                    target_hour = chosen if chosen is not None else sorted_hours[-1]
             
             if target_hour not in Config.TARGET_HOURS:
                 return ServiceResponse(
@@ -115,7 +126,8 @@ class PriceDataService:
             # =========================================================================
             # ORO - GOLDAPI.IO
             # =========================================================================
-            xau_price = self._fetch_gold_price(target_hour, now_art)
+            # xau_price = self._fetch_gold_price(target_hour, now_art)
+            xau_price = { "price_usd": 0, "timestamp_utc": now_art.astimezone(pytz.utc), "source_api": "goldapi", "collection_time_art": now_art }
             if xau_price:
                 prices_data['XAU'] = xau_price
                 records_processed += 1
@@ -125,11 +137,15 @@ class PriceDataService:
             
             # 5. Construir documento consolidado
             if prices_data:
+                # IMPORTANTE: Usar la hora ACTUAL (now_art.hour), no target_hour
+                # target_hour es solo para contexto de búsqueda, pero guardamos el precio de AHORA
+                current_hour = now_art.hour
+                
                 daily_record = self._build_daily_record(
-                    date_str, target_hour, prices_data, now_art
+                    date_str, current_hour, prices_data, now_art
                 )
                 
-                logger.info(f"Documento consolidado preparado para {date_str}")
+                logger.info(f"Documento consolidado preparado para {date_str} (hora {current_hour})")
                 
                 # =========================================================================
                 # GUARDAR O ACTUALIZAR EN MONGODB (UPSERT)
@@ -193,16 +209,24 @@ class PriceDataService:
         """
         Obtiene y procesa el precio de Bitcoin usando CoinGecko.
         
+        IMPORTANTE: Obtiene el precio de la HORA ACTUAL, no del target_hour futuro.
+        Esto permite guardar el precio real en cualquier momento, no esperar a las 10 o 17.
+        
         Args:
-            target_hour: Hora objetivo en ART
-            collection_time_art: Hora de recolección en ART
+            target_hour: Hora objetivo (0-23) - usado como referencia, pero el precio
+                        es de la hora actual
+            collection_time_art: Hora de recolección en ART (NOW)
         
         Returns:
             Dict con los datos del precio o None si falla
         """
         try:
+            # Usar la hora ACTUAL (collection_time_art) para la búsqueda de precio
+            # no el target_hour (que podría ser pasado o el "default")
+            current_hour = collection_time_art.hour
+            
             from_ts, to_ts, target_datetime_utc = get_timestamp_range_for_bitcoin(
-                target_hour,
+                current_hour,
                 Config.TIME_RANGE_MINUTES
             )
             
@@ -213,7 +237,7 @@ class PriceDataService:
             price_points = response.get_price_points()
             
             if not price_points:
-                logger.error("No se encontraron precios de Bitcoin en el rango especificado")
+                logger.error(f"No se encontraron precios de Bitcoin en rango para hora {current_hour}")
                 return None
             
             target_timestamp_ms = int(target_datetime_utc.timestamp() * 1000)
@@ -227,7 +251,7 @@ class PriceDataService:
                 closest_point.timestamp / 1000, tz=pytz.utc
             )
             
-            logger.info(f"Precio de Bitcoin encontrado: ${closest_point.price}")
+            logger.info(f"Precio de Bitcoin encontrado (hora {current_hour}): ${closest_point.price}")
             
             # Retornar como dict para consolidación
             return {
@@ -283,55 +307,93 @@ class PriceDataService:
         collection_time_art: datetime
     ) -> DailyPriceRecord:
         """
-        Construye un documento consolidado de precios diarios.
+        Construye un documento consolidado de precios diarios (array-based).
         
-        Estructura:
+        Nueva estructura:
         {
             "date": "2025-10-24",
             "prices": {
-                "BTC": {
-                    "hour_10": { snapshot },
-                    "hour_17": { snapshot }
-                },
-                "XAU": { ... }
+                "BTC": [
+                    { "hour": 10, "price_usd": 43250.75, "timestamp_utc": "...", ... },
+                    { "hour": 15, "price_usd": 43300.50, "timestamp_utc": "...", ... }
+                ],
+                "XAU": [...]
             }
         }
         
         Args:
             date_str: Fecha en formato YYYY-MM-DD
-            target_hour: Hora objetivo (10 o 17)
+            target_hour: Hora objetivo (cualquier hora 0-23)
             prices_data: Dict con {asset: {price, timestamp, source, collection_time}}
             collection_time_art: Hora de recolección en ART
         
         Returns:
             DailyPriceRecord listo para almacenar
         """
-        hour_key = f"hour_{target_hour}"
-        prices_nested = {}
+        prices_array = {}
         
         for asset, price_info in prices_data.items():
-            # Crear snapshot para este activo/hora
-            snapshot = PriceSnapshot(
+            # Crear PriceEntry para este activo/hora
+            entry = PriceEntry(
+                hour=target_hour,
                 price_usd=price_info['price_usd'],
                 timestamp_utc=price_info['timestamp_utc'],
                 source_api=price_info['source_api'],
                 collection_time_art=price_info['collection_time_art']
             )
             
-            # Estructurar: {asset: {hour_X: snapshot}}
-            if asset not in prices_nested:
-                prices_nested[asset] = {}
+            # Inicializar array si no existe
+            if asset not in prices_array:
+                prices_array[asset] = []
             
-            prices_nested[asset][hour_key] = snapshot
+            # Añadir entry al array
+            prices_array[asset].append(entry)
         
         # Crear documento consolidado
         daily_record = DailyPriceRecord(
             date=date_str,
             date_art=collection_time_art,
-            prices=prices_nested
+            prices=prices_array
         )
         
         return daily_record
+
+    def _serialize_for_json(self, obj):
+        """
+        Convierte un objeto compuesto (dict/list/datetime) en una estructura
+        totalmente JSON-serializable (convierte datetimes a ISO strings).
+        """
+        from datetime import datetime
+
+        if obj is None:
+            return None
+
+        # Si es un modelo Pydantic
+        try:
+            # model_dump devuelve estructuras nativas
+            if hasattr(obj, 'model_dump') and callable(obj.model_dump):
+                obj = obj.model_dump()
+        except Exception:
+            pass
+
+        if isinstance(obj, dict):
+            new = {}
+            for k, v in obj.items():
+                new[k] = self._serialize_for_json(v)
+            return new
+
+        if isinstance(obj, list):
+            return [self._serialize_for_json(v) for v in obj]
+
+        if isinstance(obj, datetime):
+            # Asegurarse que tenga tzinfo y usar ISO 8601
+            try:
+                return obj.isoformat()
+            except Exception:
+                return str(obj)
+
+        # Para otros tipos primitivos
+        return obj
     
     def _send_to_google_sheets(
         self,
@@ -350,8 +412,9 @@ class PriceDataService:
             logger.info(f"Enviando DailyPriceRecord a GoogleSheet: {daily_record.date}")
             
             # Enviar documento completo a GoogleSheet (sin transformación)
-            # GoogleSheet decidirá cómo procesarlo
-            self.google_sheet_client.save_record(daily_record.model_dump())
+            # Serializar datetimes y estructuras complejas a types JSON-friendly
+            serialized = self._serialize_for_json(daily_record)
+            self.google_sheet_client.save_record(serialized)
             
             logger.info(f"Documento enviado a GoogleSheet exitosamente")
         

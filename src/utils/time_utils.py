@@ -20,8 +20,16 @@ def get_utc_timezone():
 def get_current_time_art() -> datetime:
     """
     Obtiene la hora actual en zona horaria de Argentina.
+    
+    IMPORTANTE: Esto SIEMPRE retorna la hora de Argentina (ART) independientemente
+    de dónde se ejecute (local, AWS, etc). Usa pytz explícitamente para asegurar
+    conversión correcta incluso si el servidor no tiene TZ configurado.
+    
+    Returns:
+        datetime con tzinfo=America/Argentina/Buenos_Aires
     """
     art_tz = get_art_timezone()
+    # Usar datetime.now(tz) para obtener la hora actual en la zona especificada
     return datetime.now(art_tz)
 
 def get_timestamp_range_for_bitcoin(target_hour_art: int, range_minutes: int = 10) -> Tuple[int, int, datetime]:

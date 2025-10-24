@@ -16,9 +16,9 @@ class Config:
     COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY')
     GOLDAPI_KEY = os.getenv('GOLDAPI_KEY')
     
-    # MongoDB Configuration (COMENTADO - No usado por ahora)
-    # MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017')
-    # MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', 'btc_oro_db')
+    # MongoDB Configuration
+    MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017')
+    MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', 'btc_oro_db')
     
     # Google Sheets API
     GOOGLE_SHEET_API_URL = os.getenv('GOOGLE_SHEET_API_URL')

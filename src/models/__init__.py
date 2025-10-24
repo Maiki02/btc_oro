@@ -6,7 +6,7 @@ from .schemas import (
     CoinGeckoResponse,
     GoldApiResponse,
     AssetPriceRecord,
-    PriceSnapshot,
+    PriceEntry,
     DailyPriceRecord,
     GoogleSheetRecord,
     ServiceResponse
@@ -17,7 +17,7 @@ __all__ = [
     'CoinGeckoResponse',
     'GoldApiResponse',
     'AssetPriceRecord',
-    'PriceSnapshot',
+    'PriceEntry',
     'DailyPriceRecord',
     'GoogleSheetRecord',
     'ServiceResponse'

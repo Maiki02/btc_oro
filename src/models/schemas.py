@@ -170,55 +170,56 @@ class GoogleSheetRecord(BaseModel):
     @classmethod
     def from_daily_price_record(cls, daily_record: 'DailyPriceRecord') -> List['GoogleSheetRecord']:
         """
-        Convierte un DailyPriceRecord (estructura consolidada MongoDB) a múltiples GoogleSheetRecord.
+        Convierte un DailyPriceRecord (estructura array-based) a múltiples GoogleSheetRecord.
         
-        Genera una fila por cada combinación de activo-hora en el registro diario.
+        Genera una fila por cada PriceEntry en el registro diario.
         
         Ejemplo:
-            DailyPriceRecord con BTC (hour_10, hour_17) y XAU (hour_10, hour_17)
-            → Retorna 4 GoogleSheetRecord (una por cada combinación)
+            DailyPriceRecord con BTC [hour 10, 15, 17] y XAU [hour 10, 15, 17]
+            → Retorna 6 GoogleSheetRecord (uno por cada entrada)
         
         Args:
             daily_record: DailyPriceRecord desde MongoDB
         
         Returns:
-            Lista de GoogleSheetRecord (una por activo-hora)
+            Lista de GoogleSheetRecord (uno por PriceEntry)
         """
         records = []
         
-        for asset_name, hourly_prices in daily_record.prices.items():
-            for hour_key, snapshot in hourly_prices.items():
-                # Extraer la hora del formato "hour_XX"
-                hour_value = int(hour_key.split('_')[1])
-                
-                # Construir timestamp de la hora específica en ART
-                # Usamos collection_time_art del snapshot como referencia de la fecha
-                time_art = snapshot.collection_time_art.replace(
-                    hour=hour_value,
-                    minute=0,
-                    second=0,
-                    microsecond=0
-                )
-                
+        for asset_name, entries in daily_record.prices.items():
+            for entry in entries:  # entry es PriceEntry
                 record = cls(
                     date=daily_record.date,
-                    time=time_art.strftime('%H:%M'),
+                    time=entry.collection_time_art.strftime('%H:%M'),
                     asset=asset_name,
-                    price_usd=snapshot.price_usd,
-                    source=snapshot.source_api
+                    price_usd=entry.price_usd,
+                    source=entry.source_api
                 )
                 records.append(record)
         
         return records
 
 # =============================================================================
-# NUEVA ESTRUCTURA - POR DÍA (PROPUESTA OPTIMIZADA)
+# NUEVA ESTRUCTURA - POR DÍA (OPTIMIZADA: ARRAY-BASED)
 # =============================================================================
 
-class PriceSnapshot(BaseModel):
+class PriceEntry(BaseModel):
     """
-    Modelo para un snapshot de precio en una hora específica.
+    Modelo para un entry de precio en un horario específico del día.
+    
+    Cambio clave: la hora se almacena como número (0-23) dentro del entry,
+    permitiendo guardar precios de cualquier hora (no solo 10 y 17).
+    
+    Estructura:
+    {
+        "hour": 15,
+        "price_usd": 43300.50,
+        "timestamp_utc": "2025-10-24T18:15:00Z",
+        "source_api": "coingecko",
+        "collection_time_art": "2025-10-24T15:15:00-03:00"
+    }
     """
+    hour: int = Field(..., ge=0, le=23, description="Hora del día (0-23)")
     price_usd: float = Field(..., description="Precio en USD")
     timestamp_utc: datetime = Field(..., description="Timestamp en UTC")
     source_api: str = Field(..., description="API de origen (coingecko, goldapi)")
@@ -232,82 +233,108 @@ class PriceSnapshot(BaseModel):
         return v
 
 
-class HourlyPrice(BaseModel):
-    """
-    Modelo para los precios de un activo en diferentes horas del día.
-    Las claves son strings como "hour_10", "hour_17", etc.
-    """
-    pass  # Será un Dict[str, PriceSnapshot] en DailyPriceRecord
-
-
 class DailyPriceRecord(BaseModel):
     """
     Modelo para un registro diario consolidado de todos los activos y horas.
     
-    Estructura del documento en MongoDB:
+    NUEVA ESTRUCTURA (array-based):
     {
       "_id": ObjectId(...),
       "date": "2025-10-24",
       "date_art": ISODate("2025-10-24T00:00:00-03:00"),
       "prices": {
-        "BTC": {
-          "hour_10": {
+        "BTC": [
+          {
+            "hour": 10,
             "price_usd": 43250.75,
             "timestamp_utc": ISODate("2025-10-24T13:00:00Z"),
             "source_api": "coingecko",
             "collection_time_art": ISODate("2025-10-24T10:00:00-03:00")
           },
-          "hour_17": {...}
-        },
-        "XAU": {
-          "hour_10": {...},
-          "hour_17": {...}
-        }
+          {
+            "hour": 15,
+            "price_usd": 43300.50,
+            "timestamp_utc": "...",
+            "source_api": "coingecko",
+            "collection_time_art": "..."
+          },
+          {
+            "hour": 17,
+            "price_usd": 43400.00,
+            "timestamp_utc": "...",
+            "source_api": "coingecko",
+            "collection_time_art": "..."
+          }
+        ],
+        "XAU": [
+          { "hour": 10, ... },
+          { "hour": 15, ... },
+          { "hour": 17, ... }
+        ]
       }
     }
+    
+    Ventajas:
+    - Permite guardar cualquier hora (0-23), no solo 10 y 17.
+    - Fácil iterar por horas sin parsear keys.
+    - Upsert eficiente con $pull + $push en MongoDB.
+    - Escalable para futuras búsquedas por rango horario.
     """
     date: str = Field(..., description="Fecha en formato YYYY-MM-DD")
-    date_art: datetime = Field(..., description="Datetime del inicio del día en ART")
-    # prices es un diccionario anidado: {asset_name: {hour_XX: PriceSnapshot}}
-    prices: Dict[str, Dict[str, PriceSnapshot]] = Field(
+    date_art: datetime = Field(..., description="Datetime del día en ART")
+    # prices: {asset_name: [PriceEntry]} - array de entries
+    prices: Dict[str, List[PriceEntry]] = Field(
         default_factory=dict,
-        description="Estructura: {asset_name: {hour_XX: PriceSnapshot}}"
+        description="Estructura: {asset_name: [PriceEntry]}"
     )
     
     class Config:
-        # Permitir tipos complejos
         arbitrary_types_allowed = True
     
-    def add_price(self, asset_name: str, hour: int, price_snapshot: PriceSnapshot):
+    def add_price(self, asset_name: str, price_entry: PriceEntry):
         """
-        Agrega un precio a un activo en una hora específica.
+        Agrega o actualiza un precio para un activo en una hora específica.
+        Si ya existe una entrada con la misma hora, la reemplaza.
         
         Args:
             asset_name: Nombre del activo (BTC, XAU, etc.)
-            hour: Hora del día (0-23)
-            price_snapshot: Snapshot del precio
+            price_entry: PriceEntry con hora y datos de precio
         """
         if asset_name not in self.prices:
-            self.prices[asset_name] = {}
+            self.prices[asset_name] = []
         
-        hour_key = f"hour_{hour:02d}"
-        self.prices[asset_name][hour_key] = price_snapshot
+        # Buscar si ya existe una entrada para esa hora
+        existing_idx = None
+        for i, entry in enumerate(self.prices[asset_name]):
+            if entry.hour == price_entry.hour:
+                existing_idx = i
+                break
+        
+        if existing_idx is not None:
+            # Actualizar
+            self.prices[asset_name][existing_idx] = price_entry
+        else:
+            # Crear nueva, mantener ordenado por hora
+            self.prices[asset_name].append(price_entry)
+            self.prices[asset_name].sort(key=lambda e: e.hour)
     
-    def get_price(self, asset_name: str, hour: int) -> Optional[PriceSnapshot]:
+    def get_price(self, asset_name: str, hour: int) -> Optional[PriceEntry]:
         """
         Obtiene el precio de un activo en una hora específica.
         
         Args:
             asset_name: Nombre del activo
-            hour: Hora del día
+            hour: Hora del día (0-23)
         
         Returns:
-            PriceSnapshot o None si no existe
+            PriceEntry o None si no existe
         """
-        hour_key = f"hour_{hour:02d}"
-        return self.prices.get(asset_name, {}).get(hour_key)
+        for entry in self.prices.get(asset_name, []):
+            if entry.hour == hour:
+                return entry
+        return None
     
-    def get_all_prices_for_asset(self, asset_name: str) -> Dict[str, PriceSnapshot]:
+    def get_all_prices_for_asset(self, asset_name: str) -> List[PriceEntry]:
         """
         Obtiene todos los precios de un activo durante el día.
         
@@ -315,9 +342,9 @@ class DailyPriceRecord(BaseModel):
             asset_name: Nombre del activo
         
         Returns:
-            Diccionario con todos los precios por hora
+            Lista de PriceEntry ordenada por hora
         """
-        return self.prices.get(asset_name, {})
+        return self.prices.get(asset_name, [])
     
     def to_asset_price_records(self) -> List[AssetPriceRecord]:
         """
@@ -328,18 +355,15 @@ class DailyPriceRecord(BaseModel):
             Lista de AssetPriceRecord
         """
         records = []
-        for asset_name, hourly_prices in self.prices.items():
-            for hour_key, snapshot in hourly_prices.items():
-                # Extraer la hora del formato "hour_XX"
-                hour = int(hour_key.split('_')[1])
-                
+        for asset_name, entries in self.prices.items():
+            for entry in entries:
                 record = AssetPriceRecord(
                     asset_name=asset_name,
-                    price_usd=snapshot.price_usd,
-                    timestamp_utc=snapshot.timestamp_utc,
-                    source_api=snapshot.source_api,
-                    collection_time_art=snapshot.collection_time_art,
-                    target_hour_art=hour
+                    price_usd=entry.price_usd,
+                    timestamp_utc=entry.timestamp_utc,
+                    source_api=entry.source_api,
+                    collection_time_art=entry.collection_time_art,
+                    target_hour_art=entry.hour
                 )
                 records.append(record)
         
