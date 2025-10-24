@@ -1,0 +1,83 @@
+# Configuración de Cron Jobs para BTC-Oro Price Fetcher
+# 
+# Para usar este archivo:
+# 1. Edita este archivo y ajusta las rutas según tu instalación
+# 2. Ejecuta: crontab -e
+# 3. Copia y pega las líneas relevantes
+# 
+# NOTA: Asegúrate de que el servidor esté ejecutándose antes de que se activen los cron jobs.
+# Considera usar un script de inicio automático o un servicio systemd.
+
+# ============================================================================
+# CONFIGURACIÓN DE VARIABLES
+# ============================================================================
+# Ajusta estas variables según tu instalación
+# PYTHON_PATH=/ruta/a/tu/python
+# PROJECT_PATH=/ruta/a/tu/proyecto/btc_oro
+# SERVER_URL=http://localhost:8080
+
+# ============================================================================
+# CRON JOBS PRINCIPALES
+# ============================================================================
+
+# Ejecutar a las 10:00 ART todos los días
+0 10 * * * curl -s http://localhost:8080/api/v1/trigger-fetch?hour=10 >> /var/log/btc_oro_10.log 2>&1
+
+# Ejecutar a las 17:00 ART todos los días
+0 17 * * * curl -s http://localhost:8080/api/v1/trigger-fetch?hour=17 >> /var/log/btc_oro_17.log 2>&1
+
+# ============================================================================
+# ALTERNATIVA: Si prefieres arrancar el servidor en cada ejecución
+# ============================================================================
+# (No recomendado para producción, pero útil para pruebas)
+
+# A las 09:55 ART - Arrancar servidor y esperar
+# 55 9 * * * cd /ruta/a/proyecto && python main.py >> /var/log/btc_oro_server.log 2>&1 &
+
+# A las 10:05 ART - Ejecutar obtención de datos
+# 5 10 * * * curl -s http://localhost:8080/api/v1/trigger-fetch?hour=10
+
+# A las 16:55 ART - Asegurar que el servidor esté activo
+# 55 16 * * * curl -s http://localhost:8080/health || (cd /ruta/a/proyecto && python main.py >> /var/log/btc_oro_server.log 2>&1 &)
+
+# A las 17:05 ART - Ejecutar obtención de datos
+# 5 17 * * * curl -s http://localhost:8080/api/v1/trigger-fetch?hour=17
+
+# ============================================================================
+# HEALTH CHECKS
+# ============================================================================
+
+# Verificar que el servidor esté activo cada hora (opcional)
+# 0 * * * * curl -s http://localhost:8080/health >> /var/log/btc_oro_health.log 2>&1
+
+# ============================================================================
+# NOTAS IMPORTANTES
+# ============================================================================
+# 
+# 1. ZONA HORARIA:
+#    - Los cron jobs usan la zona horaria del sistema
+#    - Verifica que tu sistema esté configurado en ART (Argentina Time)
+#    - Comando: timedatectl (Linux) o date (Mac/Linux)
+# 
+# 2. LOGS:
+#    - Los logs se guardan en /var/log/ por defecto
+#    - Crea los archivos de log si no existen:
+#      sudo touch /var/log/btc_oro_10.log
+#      sudo touch /var/log/btc_oro_17.log
+#      sudo chmod 666 /var/log/btc_oro_*.log
+# 
+# 3. PERMISOS:
+#    - Asegúrate de tener permisos de escritura en el directorio de logs
+#    - El usuario de cron debe poder ejecutar curl y python
+# 
+# 4. TESTING:
+#    - Prueba los comandos manualmente antes de agregarlos a cron
+#    - Ejecuta: curl http://localhost:8080/health
+#    - Verifica que devuelva una respuesta exitosa
+# 
+# 5. SERVIDOR PERSISTENTE:
+#    - Se recomienda ejecutar el servidor como un servicio systemd
+#    - Esto asegura que el servidor esté siempre activo
+#    - Ver archivo systemd-service.example para más información
+#
+# ============================================================================
