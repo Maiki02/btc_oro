@@ -126,8 +126,9 @@ class PriceDataService:
             # =========================================================================
             # ORO - GOLDAPI.IO
             # =========================================================================
-            # xau_price = self._fetch_gold_price(target_hour, now_art)
-            xau_price = { "price_usd": 0, "timestamp_utc": now_art.astimezone(pytz.utc), "source_api": "goldapi", "collection_time_art": now_art }
+            xau_price = self._fetch_gold_price(target_hour, now_art)
+            # xau_price = { "price_usd": 0, "timestamp_utc": now_art.astimezone(pytz.utc), "source_api": "goldapi", "collection_time_art": now_art }
+            
             if xau_price:
                 prices_data['XAU'] = xau_price
                 records_processed += 1
