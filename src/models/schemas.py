@@ -6,37 +6,37 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, validator
 
 # =============================================================================
-# MODELOS COMENTADOS - CoinGecko y MetalsAPI
+# MODELOS PARA COINGECKO
 # =============================================================================
-# class CoinGeckoPricePoint(BaseModel):
-#     """
-#     Modelo para un punto de precio de CoinGecko [timestamp, price].
-#     """
-#     timestamp: int  # Unix timestamp en milisegundos
-#     price: float
-#     
-#     @classmethod
-#     def from_list(cls, data: List[float]):
-#         """
-#         Crea una instancia desde una lista [timestamp, price].
-#         """
-#         if len(data) != 2:
-#             raise ValueError("Los datos deben contener exactamente 2 elementos: [timestamp, price]")
-#         return cls(timestamp=int(data[0]), price=data[1])
-# 
-# class CoinGeckoResponse(BaseModel):
-#     """
-#     Modelo para la respuesta de la API de CoinGecko market_chart/range.
-#     """
-#     prices: List[List[float]]
-#     market_caps: Optional[List[List[float]]] = None
-#     total_volumes: Optional[List[List[float]]] = None
-#     
-#     def get_price_points(self) -> List[CoinGeckoPricePoint]:
-#         """
-#         Convierte la lista de prices a objetos CoinGeckoPricePoint.
-#         """
-#         return [CoinGeckoPricePoint.from_list(price_data) for price_data in self.prices]
+class CoinGeckoPricePoint(BaseModel):
+    """
+    Modelo para un punto de precio de CoinGecko [timestamp, price].
+    """
+    timestamp: int  # Unix timestamp en milisegundos
+    price: float
+    
+    @classmethod
+    def from_list(cls, data: List[float]):
+        """
+        Crea una instancia desde una lista [timestamp, price].
+        """
+        if len(data) != 2:
+            raise ValueError("Los datos deben contener exactamente 2 elementos: [timestamp, price]")
+        return cls(timestamp=int(data[0]), price=data[1])
+
+class CoinGeckoResponse(BaseModel):
+    """
+    Modelo para la respuesta de la API de CoinGecko market_chart/range.
+    """
+    prices: List[List[float]]
+    market_caps: Optional[List[List[float]]] = None
+    total_volumes: Optional[List[List[float]]] = None
+    
+    def get_price_points(self) -> List[CoinGeckoPricePoint]:
+        """
+        Convierte la lista de prices a objetos CoinGeckoPricePoint.
+        """
+        return [CoinGeckoPricePoint.from_list(price_data) for price_data in self.prices]
 # 
 # class MetalsApiResponse(BaseModel):
 #     """
@@ -132,7 +132,7 @@ class AssetPriceRecord(BaseModel):
     
     @validator('source_api')
     def validate_source_api(cls, v):
-        allowed_sources = ['goldapi']  # 'coingecko', 'metals-api' (COMENTADOS)
+        allowed_sources = ['coingecko', 'goldapi']
         if v not in allowed_sources:
             raise ValueError(f'source_api debe ser uno de: {allowed_sources}')
         return v

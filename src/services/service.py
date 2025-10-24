@@ -5,10 +5,10 @@ from datetime import datetime
 import logging
 import pytz
 
-from ..clients.api_clients import GoldApiClient, GoogleSheetClient  # CoinGeckoClient, MetalsApiClient (COMENTADOS)
+from ..clients.api_clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient
 # from ..repositories.repository import PriceRepository  # COMENTADO - MongoDB
 from ..models.schemas import AssetPriceRecord, GoogleSheetRecord, ServiceResponse
-from ..utils.time_utils import get_current_time_art
+from ..utils.time_utils import get_current_time_art, get_timestamp_range_for_bitcoin
 from ..config import Config
 
 # Configurar logging
@@ -19,11 +19,11 @@ logger = logging.getLogger(__name__)
 class PriceDataService:
     """
     Servicio principal que orquesta la obtención y almacenamiento de precios.
-    VERSIÓN SIMPLIFICADA PARA PRUEBAS - Solo GoldAPI
     """
     
     def __init__(
         self,
+        coingecko_client: CoinGeckoClient,
         goldapi_client: GoldApiClient,
         google_sheet_client: GoogleSheetClient,
         # price_repository: PriceRepository  # COMENTADO - MongoDB
@@ -32,9 +32,11 @@ class PriceDataService:
         Inicializa el servicio con las dependencias inyectadas.
         
         Args:
+            coingecko_client: Cliente para la API de CoinGecko
             goldapi_client: Cliente para la API de GoldAPI.io
             google_sheet_client: Cliente para Google Sheets
         """
+        self.coingecko_client = coingecko_client
         self.goldapi_client = goldapi_client
         self.google_sheet_client = google_sheet_client
         # self.price_repository = price_repository  # COMENTADO - MongoDB
@@ -78,26 +80,46 @@ class PriceDataService:
             logger.info(f"Hora objetivo: {target_hour}:00 ART")
             
             # =========================================================================
-            # BITCOIN - COMENTADO PARA PRUEBAS
+            # BITCOIN - COINGECKO API
             # =========================================================================
-            # from_ts, to_ts, target_datetime_utc = get_timestamp_range_for_bitcoin(
-            #     target_hour, 
-            #     Config.TIME_RANGE_MINUTES
-            # )
-            # btc_record = self._fetch_bitcoin_price(
-            #     from_ts, to_ts, target_datetime_utc, target_hour, now_art
-            # )
-            # if btc_record:
-            #     self.price_repository.save_price_record(btc_record)
-            #     google_record = GoogleSheetRecord.from_asset_price_record(btc_record)
-            #     self.google_sheet_client.save_record(google_record.model_dump())
-            #     records_processed += 1
+            from_ts, to_ts, target_datetime_utc = get_timestamp_range_for_bitcoin(
+                target_hour, 
+                Config.TIME_RANGE_MINUTES
+            )
+            btc_record = self._fetch_bitcoin_price(
+                from_ts, to_ts, target_datetime_utc, target_hour, now_art
+            )
+            if btc_record:
+                # Guardar en MongoDB (COMENTADO)
+                # self.price_repository.save_price_record(btc_record)
+                
+                # Enviar a Google Sheets
+                google_record = GoogleSheetRecord.from_asset_price_record(btc_record)
+                try:
+                    self.google_sheet_client.save_record(google_record.model_dump())
+                    logger.info("Datos de BTC enviados a Google Sheets exitosamente")
+                except Exception as e:
+                    logger.warning(f"No se pudo enviar BTC a Google Sheets: {e}")
+                    errors.append(f"Error al enviar BTC a Google Sheets: {str(e)}")
+                
+                records_processed += 1
+                logger.info(f"Precio de Bitcoin procesado exitosamente: ${btc_record.price_usd}")
+            else:
+                errors.append("No se pudo obtener el precio de Bitcoin")
             
             # =========================================================================
-            # ORO - USANDO GOLDAPI.IO
+            # ORO - USANDO GOLDAPI.IO (COMENTADO PARA PRUEBAS)
             # =========================================================================
-            xau_record = self._fetch_gold_price(target_hour, now_art)
-            
+            # xau_record = self._fetch_gold_price(target_hour, now_art)
+            xau_record = {
+                'asset_name': 'XAU',
+                'price_usd': 1800.50,
+                'timestamp_utc': datetime.now(pytz.utc),
+                'source_api': 'goldapi',
+                'collection_time_art': now_art,
+                'target_hour_art': target_hour
+            }
+
             if xau_record:
                 # Guardar en MongoDB (COMENTADO)
                 # self.price_repository.save_price_record(xau_record)
@@ -143,10 +165,72 @@ class PriceDataService:
             )
     
     # =========================================================================
-    # MÉTODOS PRIVADOS COMENTADOS - Bitcoin
+    # MÉTODOS PRIVADOS
     # =========================================================================
-    # def _fetch_bitcoin_price(...):
-    #     ... (comentado)
+    def _fetch_bitcoin_price(
+        self,
+        from_timestamp: int,
+        to_timestamp: int,
+        target_datetime_utc: datetime,
+        target_hour: int,
+        collection_time_art: datetime
+    ) -> AssetPriceRecord:
+        """
+        Obtiene y procesa el precio de Bitcoin usando CoinGecko.
+        
+        Args:
+            from_timestamp: Timestamp de inicio en segundos (Unix)
+            to_timestamp: Timestamp de fin en segundos (Unix)
+            target_datetime_utc: Datetime objetivo en UTC
+            target_hour: Hora objetivo en ART
+            collection_time_art: Hora de recolección en ART
+        
+        Returns:
+            AssetPriceRecord con los datos de Bitcoin o None si falla
+        """
+        try:
+            # Consultar API de CoinGecko
+            response = self.coingecko_client.get_bitcoin_price_in_range(
+                from_timestamp, to_timestamp
+            )
+            
+            # Obtener los puntos de precio
+            price_points = response.get_price_points()
+            
+            if not price_points:
+                logger.error("No se encontraron precios de Bitcoin en el rango especificado")
+                return None
+            
+            # Encontrar el precio más cercano a la hora objetivo
+            target_timestamp_ms = int(target_datetime_utc.timestamp() * 1000)
+            
+            closest_point = min(
+                price_points,
+                key=lambda p: abs(p.timestamp - target_timestamp_ms)
+            )
+            
+            logger.info(f"Precio de Bitcoin encontrado: ${closest_point.price}")
+            
+            # Convertir timestamp de milisegundos a datetime UTC
+            timestamp_utc = datetime.fromtimestamp(
+                closest_point.timestamp / 1000, tz=pytz.utc
+            )
+            
+            # Crear el registro normalizado
+            record = AssetPriceRecord(
+                asset_name='BTC',
+                price_usd=closest_point.price,
+                timestamp_utc=timestamp_utc,
+                source_api='coingecko',
+                collection_time_art=collection_time_art,
+                target_hour_art=target_hour
+            )
+            
+            return record
+            
+        except Exception as e:
+            logger.error(f"Error al obtener precio de Bitcoin: {e}", exc_info=True)
+            return None
     
     def _fetch_gold_price(
         self,

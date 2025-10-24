@@ -5,7 +5,7 @@ import requests
 from typing import Optional, Dict, Any
 import logging
 
-from ..models.schemas import GoldApiResponse  # CoinGeckoResponse, MetalsApiResponse (COMENTADOS)
+from ..models.schemas import GoldApiResponse, CoinGeckoResponse
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -13,65 +13,65 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# COINGECKO CLIENT - COMENTADO PARA PRUEBAS
+# COINGECKO CLIENT
 # =============================================================================
-# class CoinGeckoClient:
-#     """
-#     Cliente para la API de CoinGecko.
-#     """
-#     
-#     BASE_URL = "https://api.coingecko.com/api/v3"
-#     
-#     def __init__(self, api_key: str):
-#         """
-#         Inicializa el cliente de CoinGecko.
-#         
-#         Args:
-#             api_key: API Key de CoinGecko
-#         """
-#         self.api_key = api_key
-#         self.session = requests.Session()
-#         if api_key:
-#             self.session.headers.update({'x-cg-demo-api-key': api_key})
-#     
-#     def get_bitcoin_price_in_range(self, from_timestamp: int, to_timestamp: int) -> CoinGeckoResponse:
-#         """
-#         Obtiene los precios de Bitcoin en un rango de tiempo.
-#         
-#         Args:
-#             from_timestamp: Timestamp de inicio en segundos (Unix)
-#             to_timestamp: Timestamp de fin en segundos (Unix)
-#         
-#         Returns:
-#             CoinGeckoResponse con los datos de precios
-#         
-#         Raises:
-#             requests.exceptions.RequestException: Si hay un error en la petición
-#             ValueError: Si la respuesta no es válida
-#         """
-#         endpoint = f"{self.BASE_URL}/coins/bitcoin/market_chart/range"
-#         params = {
-#             'vs_currency': 'usd',
-#             'from': from_timestamp,
-#             'to': to_timestamp
-#         }
-#         
-#         try:
-#             logger.info(f"Consultando CoinGecko API: from={from_timestamp}, to={to_timestamp}")
-#             response = self.session.get(endpoint, params=params, timeout=10)
-#             response.raise_for_status()
-#             
-#             data = response.json()
-#             logger.info(f"Respuesta de CoinGecko recibida: {len(data.get('prices', []))} puntos de precio")
-#             
-#             return CoinGeckoResponse(**data)
-#             
-#         except requests.exceptions.RequestException as e:
-#             logger.error(f"Error al consultar CoinGecko API: {e}")
-#             raise
-#         except Exception as e:
-#             logger.error(f"Error al procesar respuesta de CoinGecko: {e}")
-#             raise ValueError(f"Respuesta inválida de CoinGecko: {e}")
+class CoinGeckoClient:
+    """
+    Cliente para la API de CoinGecko.
+    """
+    
+    BASE_URL = "https://api.coingecko.com/api/v3"
+    
+    def __init__(self, api_key: str):
+        """
+        Inicializa el cliente de CoinGecko.
+        
+        Args:
+            api_key: API Key de CoinGecko
+        """
+        self.api_key = api_key
+        self.session = requests.Session()
+        if api_key:
+            self.session.headers.update({'x-cg-demo-api-key': api_key})
+    
+    def get_bitcoin_price_in_range(self, from_timestamp: int, to_timestamp: int) -> CoinGeckoResponse:
+        """
+        Obtiene los precios de Bitcoin en un rango de tiempo.
+        
+        Args:
+            from_timestamp: Timestamp de inicio en segundos (Unix)
+            to_timestamp: Timestamp de fin en segundos (Unix)
+        
+        Returns:
+            CoinGeckoResponse con los datos de precios
+        
+        Raises:
+            requests.exceptions.RequestException: Si hay un error en la petición
+            ValueError: Si la respuesta no es válida
+        """
+        endpoint = f"{self.BASE_URL}/coins/bitcoin/market_chart/range"
+        params = {
+            'vs_currency': 'usd',
+            'from': from_timestamp,
+            'to': to_timestamp
+        }
+        
+        try:
+            logger.info(f"Consultando CoinGecko API: from={from_timestamp}, to={to_timestamp}")
+            response = self.session.get(endpoint, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            logger.info(f"Respuesta de CoinGecko recibida: {len(data.get('prices', []))} puntos de precio")
+            
+            return CoinGeckoResponse(**data)
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error al consultar CoinGecko API: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error al procesar respuesta de CoinGecko: {e}")
+            raise ValueError(f"Respuesta inválida de CoinGecko: {e}")
 
 
 # =============================================================================

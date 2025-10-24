@@ -7,7 +7,7 @@ import logging
 from urllib.parse import urlparse
 
 from src.config import Config
-from src.clients import GoldApiClient, GoogleSheetClient  # CoinGeckoClient, MetalsApiClient (COMENTADOS)
+from src.clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient
 # from src.repositories import PriceRepository  # COMENTADO - MongoDB
 from src.services import PriceDataService
 from src.handlers import PriceHandler
@@ -106,7 +106,6 @@ class RequestHandler(BaseHTTPRequestHandler):
 def initialize_dependencies():
     """
     Inicializa todas las dependencias de la aplicación.
-    VERSIÓN SIMPLIFICADA PARA PRUEBAS - Solo GoldAPI
     
     Returns:
         Instancia del Router configurado
@@ -123,7 +122,7 @@ def initialize_dependencies():
     logger.warning("⚠️  MODO DE PRUEBA: Validación de config desactivada")
     
     # Inicializar clientes de API
-    # coingecko_client = CoinGeckoClient(Config.COINGECKO_API_KEY)  # COMENTADO
+    coingecko_client = CoinGeckoClient(Config.COINGECKO_API_KEY)
     goldapi_client = GoldApiClient(Config.GOLDAPI_KEY)
     google_sheet_client = GoogleSheetClient(Config.GOOGLE_SHEET_API_URL)
     
@@ -135,6 +134,7 @@ def initialize_dependencies():
     
     # Inicializar servicio
     price_service = PriceDataService(
+        coingecko_client=coingecko_client,
         goldapi_client=goldapi_client,
         google_sheet_client=google_sheet_client,
         # price_repository=price_repository  # COMENTADO - MongoDB

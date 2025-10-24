@@ -13,8 +13,8 @@ class Config:
     """
     
     # API Keys
-    # COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY')  # COMENTADO - No usado por ahora
-    GOLDAPI_KEY = os.getenv('GOLDAPI_KEY')  # NUEVO: GoldAPI.io
+    COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY')
+    GOLDAPI_KEY = os.getenv('GOLDAPI_KEY')
     
     # MongoDB Configuration (COMENTADO - No usado por ahora)
     # MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017')
