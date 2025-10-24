@@ -58,7 +58,8 @@ class CoinGeckoClient:
         
         try:
             logger.info(f"Consultando CoinGecko API: from={from_timestamp}, to={to_timestamp}")
-            response = self.session.get(endpoint, params=params, timeout=10)
+            # Timeout de 15 segundos (CoinGecko suele ser rápido)
+            response = self.session.get(endpoint, params=params, timeout=15)
             response.raise_for_status()
             
             data = response.json()
@@ -98,13 +99,17 @@ class GoldApiClient:
             'Content-Type': 'application/json'
         })
     
-    def get_gold_price(self, symbol: str = "XAU", currency: str = "USD") -> GoldApiResponse:
+    def get_gold_price(self, symbol: str = "XAU", currency: str = "USD", retry_count: int = 2) -> GoldApiResponse:
         """
         Obtiene el precio actual del oro.
+        
+        Implementa reintentos automáticos en caso de timeout.
+        GoldAPI.io puede ser lento ocasionalmente.
         
         Args:
             symbol: Símbolo del metal (default: "XAU" para oro)
             currency: Moneda de cotización (default: "USD")
+            retry_count: Número de reintentos en caso de timeout (default: 2)
         
         Returns:
             GoldApiResponse con los datos del oro
@@ -114,23 +119,42 @@ class GoldApiClient:
             ValueError: Si la respuesta no es válida
         """
         endpoint = f"{self.BASE_URL}/{symbol}/{currency}"
+        last_error = None
         
-        try:
-            logger.info(f"Consultando GoldAPI.io: {symbol}/{currency}")
-            response = self.session.get(endpoint, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            logger.info(f"Respuesta de GoldAPI.io recibida: precio={data.get('price', 'N/A')}")
-            
-            return GoldApiResponse(**data)
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error al consultar GoldAPI.io: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Error al procesar respuesta de GoldAPI.io: {e}")
-            raise ValueError(f"Respuesta inválida de GoldAPI.io: {e}")
+        for attempt in range(retry_count + 1):
+            try:
+                logger.info(f"Consultando GoldAPI.io: {symbol}/{currency}" + 
+                           (f" (intento {attempt + 1}/{retry_count + 1})" if attempt > 0 else ""))
+                
+                # Usar timeout más generoso (30s en lugar de 10s)
+                # GoldAPI.io puede tardar, especialmente en horas pico
+                response = self.session.get(endpoint, timeout=30)
+                response.raise_for_status()
+                
+                data = response.json()
+                logger.info(f"Respuesta de GoldAPI.io recibida: precio={data.get('price', 'N/A')}")
+                
+                return GoldApiResponse(**data)
+                
+            except requests.exceptions.Timeout as e:
+                last_error = e
+                logger.warning(f"Timeout en GoldAPI.io (intento {attempt + 1}/{retry_count + 1}): {e}")
+                if attempt < retry_count:
+                    logger.info(f"Reintentando...")
+                    continue
+                else:
+                    logger.error(f"GoldAPI.io agotó reintentos por timeout")
+                    raise
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Error al consultar GoldAPI.io: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Error al procesar respuesta de GoldAPI.io: {e}")
+                raise ValueError(f"Respuesta inválida de GoldAPI.io: {e}")
+        
+        # Fallback (no debería llegar aquí)
+        raise last_error if last_error else Exception("Error desconocido en GoldAPI.io")
 
 
 class GoogleSheetClient:
