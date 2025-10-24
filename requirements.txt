@@ -1,5 +1,42 @@
-python-dotenv==1.0.0
-requests==2.31.0
-pytz==2023.3
-pymongo==4.6.0
-pydantic==2.5.0
+# ============================================================================
+# DEPENDENCIAS - BTC-ORO PRICE FETCHER
+# ============================================================================
+# Compatible con:
+# - Desarrollo Local (python main.py)
+# - AWS Lambda (Despliegue serverless)
+# ============================================================================
+
+# CORE - Utilidades esenciales
+python-dotenv==1.0.0          # Cargar variables de entorno desde .env
+requests==2.31.0              # Realizar peticiones HTTP a APIs externas
+pytz==2023.3                  # Manejo de zonas horarias
+pydantic==2.5.0               # Validación de datos con esquemas
+
+# DATABASE - Acceso a base de datos
+pymongo==4.6.0                # Driver de MongoDB
+
+# AWS - Para desarrollo/testing con Lambda (opcional)
+# NOTA: AWS SDK (boto3) ya viene preinstalado en Lambda
+# Descomentar solo si necesitas funcionalidades específicas localmente:
+# boto3==1.28.0              # AWS SDK para Python
+# aws-lambda-powertools==2.0  # Utilidades para Lambda (logging, tracing)
+
+# ============================================================================
+# NOTAS DE INSTALACIÓN
+# ============================================================================
+#
+# DESARROLLO LOCAL:
+# pip install -r requirements.txt
+#
+# AWS LAMBDA:
+# 1. Las dependencias se instalan automáticamente con:
+#    pip install -r requirements.txt -t lambda_package/
+# 2. Se empaquetan juntas en un ZIP
+# 3. Se suben a AWS Lambda
+#
+# COMPATIBILIDAD:
+# - Python 3.11+ (recomendado para Lambda)
+# - Todas las dependencias funcionan en Linux (entorno de Lambda)
+# - pymongo requiere conectividad a MongoDB (Atlas recomendado)
+#
+# ============================================================================
