@@ -403,7 +403,26 @@ class PriceDataService:
         Envía el documento consolidado diario completo a Google Sheets.
         
         GoogleSheet recibe el mismo documento que se almacenó en MongoDB.
-        GoogleSheet es responsable de transformar/formatear los datos como sea necesario.
+        Estructura enviada:
+        {
+            "date": "2025-10-25",
+            "date_art": "2025-10-24T15:55:53.125396-03:00",
+            "prices": {
+                "BTC": [
+                    {
+                        "hour": 17,
+                        "price_usd": 110340.829253726,
+                        "timestamp_utc": "2025-10-24T17:55:52.341000Z",
+                        "source_api": "coingecko",
+                        "collection_time_art": "2025-10-24T15:55:53.125396-03:00"
+                    }
+                ],
+                "XAU": [...]
+            }
+        }
+        
+        GoogleSheet (vía Google Apps Script) es responsable de procesar y formatear
+        los datos como sea necesario en la hoja de cálculo.
         
         Args:
             daily_record: DailyPriceRecord consolidado (desde MongoDB o local)
@@ -411,12 +430,19 @@ class PriceDataService:
         try:
             logger.info(f"Enviando DailyPriceRecord a GoogleSheet: {daily_record.date}")
             
-            # Enviar documento completo a GoogleSheet (sin transformación)
-            # Serializar datetimes y estructuras complejas a types JSON-friendly
-            serialized = self._serialize_for_json(daily_record)
-            self.google_sheet_client.save_record(serialized)
+            # Serializar a dict con datetimes convertidos a ISO 8601 strings
+            # mode='json' convierte datetimes automáticamente
+            serialized_record = daily_record.model_dump(mode='json')
             
-            logger.info(f"Documento enviado a GoogleSheet exitosamente")
+            logger.debug(f"Payload enviado a GoogleSheet: {serialized_record}")
+            
+            # Enviar POST a la URL de Google Apps Script
+            success = self.google_sheet_client.save_record(serialized_record)
+            
+            if success:
+                logger.info(f"✓ Documento enviado a GoogleSheet exitosamente")
+            else:
+                logger.warning(f"⚠ No se pudo enviar documento a GoogleSheet (ver logs del cliente)")
         
         except Exception as e:
             logger.error(f"Error al enviar documento a GoogleSheet: {e}", exc_info=True)

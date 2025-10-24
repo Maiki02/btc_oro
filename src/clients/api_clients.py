@@ -136,6 +136,10 @@ class GoldApiClient:
 class GoogleSheetClient:
     """
     Cliente para enviar datos a Google Sheets.
+    
+    Envía la estructura consolidada de precios diarios (como viene de MongoDB)
+    directamente al Google Apps Script. El script es responsable de procesar
+    y formatear los datos como sea necesario.
     """
     
     def __init__(self, api_url: str):
@@ -143,36 +147,82 @@ class GoogleSheetClient:
         Inicializa el cliente de Google Sheets.
         
         Args:
-            api_url: URL de la API de Google Sheets
+            api_url: URL de la API de Google Sheets (Google Apps Script)
         """
         self.api_url = api_url
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})
     
-    def save_record(self, data: Dict[str, Any]) -> bool:
+    def save_record(self, daily_record_dict: Dict[str, Any]) -> bool:
         """
-        Guarda un registro en Google Sheets.
+        Envía un registro de precios consolidado a Google Sheets.
+        
+        Envía la estructura completa del documento MongoDB:
+        {
+            "date": "2025-10-25",
+            "date_art": "2025-10-24T15:55:53.125396-03:00",
+            "prices": {
+                "BTC": [
+                    {
+                        "hour": 17,
+                        "price_usd": 110340.829253726,
+                        "timestamp_utc": "2025-10-24T17:55:52.341000Z",
+                        "source_api": "coingecko",
+                        "collection_time_art": "2025-10-24T15:55:53.125396-03:00"
+                    }
+                ],
+                "XAU": [
+                    {
+                        "hour": 17,
+                        "price_usd": 4500,
+                        "timestamp_utc": "2025-10-24T18:55:53.125396Z",
+                        "source_api": "goldapi",
+                        "collection_time_art": "2025-10-24T15:55:53.125396-03:00"
+                    }
+                ]
+            }
+        }
+        
+        El Google Apps Script recibe este JSON y es responsable de:
+        - Procesar y formatear los datos
+        - Escribir en las celdas correspondientes
+        - Aplicar estilos, validaciones, etc.
         
         Args:
-            data: Diccionario con los datos a guardar
+            daily_record_dict: Diccionario con la estructura consolidada
+                             (resultado de DailyPriceRecord.model_dump(mode='json'))
         
         Returns:
-            True si se guardó exitosamente, False en caso contrario
-        
-        Raises:
-            requests.exceptions.RequestException: Si hay un error en la petición
+            True si se envió exitosamente, False en caso contrario
         """
         try:
-            logger.info(f"Enviando datos a Google Sheets: {data}")
-            response = self.session.post(self.api_url, json=data, timeout=10)
+            if not self.api_url:
+                logger.warning("URL de Google Sheets no configurada. Saltando envío.")
+                return False
+            
+            logger.info(f"Enviando DailyPriceRecord a Google Sheets para fecha: {daily_record_dict.get('date')}")
+            logger.debug(f"Payload: {daily_record_dict}")
+            
+            # POST directo a la URL con la estructura completa
+            response = self.session.post(
+                self.api_url,
+                json=daily_record_dict,
+                timeout=15
+            )
             response.raise_for_status()
             
-            logger.info("Datos enviados exitosamente a Google Sheets")
+            logger.info(f"✓ Datos enviados exitosamente a Google Sheets. Status: {response.status_code}")
             return True
             
+        except requests.exceptions.Timeout:
+            logger.error("Timeout al enviar a Google Sheets (>15s)")
+            return False
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Error HTTP al enviar a Google Sheets: {response.status_code} - {e}")
+            return False
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error al enviar datos a Google Sheets: {e}")
-            raise
+            logger.error(f"Error de conexión al enviar a Google Sheets: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Error inesperado al enviar a Google Sheets: {e}")
-            raise
+            logger.error(f"Error inesperado al enviar a Google Sheets: {e}", exc_info=True)
+            return False
