@@ -7,8 +7,8 @@ import logging
 from urllib.parse import urlparse
 
 from src.config import Config
-from src.clients import CoinGeckoClient, MetalsApiClient, GoogleSheetClient
-from src.repositories import PriceRepository
+from src.clients import GoldApiClient, GoogleSheetClient  # CoinGeckoClient, MetalsApiClient (COMENTADOS)
+# from src.repositories import PriceRepository  # COMENTADO - MongoDB
 from src.services import PriceDataService
 from src.handlers import PriceHandler
 from src.routes import Router
@@ -106,36 +106,38 @@ class RequestHandler(BaseHTTPRequestHandler):
 def initialize_dependencies():
     """
     Inicializa todas las dependencias de la aplicación.
+    VERSIÓN SIMPLIFICADA PARA PRUEBAS - Solo GoldAPI
     
     Returns:
         Instancia del Router configurado
     """
-    logger.info("Inicializando dependencias...")
+    logger.info("Inicializing dependencies...")
     
-    # Validar configuración
-    try:
-        Config.validate_config()
-    except ValueError as e:
-        logger.error(f"Error en la configuración: {e}")
-        raise
+    # Validar configuración (COMENTADO para pruebas)
+    # try:
+    #     Config.validate_config()
+    # except ValueError as e:
+    #     logger.error(f"Error en la configuración: {e}")
+    #     raise
+    
+    logger.warning("⚠️  MODO DE PRUEBA: Validación de config desactivada")
     
     # Inicializar clientes de API
-    coingecko_client = CoinGeckoClient(Config.COINGECKO_API_KEY)
-    metals_api_client = MetalsApiClient(Config.METALS_API_KEY)
+    # coingecko_client = CoinGeckoClient(Config.COINGECKO_API_KEY)  # COMENTADO
+    goldapi_client = GoldApiClient(Config.GOLDAPI_KEY)
     google_sheet_client = GoogleSheetClient(Config.GOOGLE_SHEET_API_URL)
     
-    # Inicializar repositorio
-    price_repository = PriceRepository(
-        mongo_uri=Config.MONGO_URI,
-        db_name=Config.MONGO_DB_NAME
-    )
+    # Inicializar repositorio (COMENTADO - MongoDB)
+    # price_repository = PriceRepository(
+    #     mongo_uri=Config.MONGO_URI,
+    #     db_name=Config.MONGO_DB_NAME
+    # )
     
     # Inicializar servicio
     price_service = PriceDataService(
-        coingecko_client=coingecko_client,
-        metals_api_client=metals_api_client,
+        goldapi_client=goldapi_client,
         google_sheet_client=google_sheet_client,
-        price_repository=price_repository
+        # price_repository=price_repository  # COMENTADO - MongoDB
     )
     
     # Inicializar handler

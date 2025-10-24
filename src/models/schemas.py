@@ -5,57 +5,112 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, validator
 
-class CoinGeckoPricePoint(BaseModel):
-    """
-    Modelo para un punto de precio de CoinGecko [timestamp, price].
-    """
-    timestamp: int  # Unix timestamp en milisegundos
-    price: float
-    
-    @classmethod
-    def from_list(cls, data: List[float]):
-        """
-        Crea una instancia desde una lista [timestamp, price].
-        """
-        if len(data) != 2:
-            raise ValueError("Los datos deben contener exactamente 2 elementos: [timestamp, price]")
-        return cls(timestamp=int(data[0]), price=data[1])
+# =============================================================================
+# MODELOS COMENTADOS - CoinGecko y MetalsAPI
+# =============================================================================
+# class CoinGeckoPricePoint(BaseModel):
+#     """
+#     Modelo para un punto de precio de CoinGecko [timestamp, price].
+#     """
+#     timestamp: int  # Unix timestamp en milisegundos
+#     price: float
+#     
+#     @classmethod
+#     def from_list(cls, data: List[float]):
+#         """
+#         Crea una instancia desde una lista [timestamp, price].
+#         """
+#         if len(data) != 2:
+#             raise ValueError("Los datos deben contener exactamente 2 elementos: [timestamp, price]")
+#         return cls(timestamp=int(data[0]), price=data[1])
+# 
+# class CoinGeckoResponse(BaseModel):
+#     """
+#     Modelo para la respuesta de la API de CoinGecko market_chart/range.
+#     """
+#     prices: List[List[float]]
+#     market_caps: Optional[List[List[float]]] = None
+#     total_volumes: Optional[List[List[float]]] = None
+#     
+#     def get_price_points(self) -> List[CoinGeckoPricePoint]:
+#         """
+#         Convierte la lista de prices a objetos CoinGeckoPricePoint.
+#         """
+#         return [CoinGeckoPricePoint.from_list(price_data) for price_data in self.prices]
+# 
+# class MetalsApiResponse(BaseModel):
+#     """
+#     Modelo para la respuesta de la API de Metals-API.
+#     """
+#     success: bool
+#     timestamp: int
+#     historical: bool
+#     base: str
+#     date: str
+#     rates: Dict[str, float]
+#     
+#     def get_xau_usd_rate(self) -> float:
+#         """
+#         Obtiene la tasa XAU/USD y realiza el cálculo 1/valor para obtener USD por onza.
+#         """
+#         xau_usd_rate = self.rates.get('XAUUSD')
+#         if xau_usd_rate is None:
+#             raise ValueError("La respuesta no contiene la tasa XAUUSD")
+#         
+#         # Cálculo crítico: 1 / valor_recibido para obtener USD por onza
+#         return 1.0 / xau_usd_rate
 
-class CoinGeckoResponse(BaseModel):
-    """
-    Modelo para la respuesta de la API de CoinGecko market_chart/range.
-    """
-    prices: List[List[float]]
-    market_caps: Optional[List[List[float]]] = None
-    total_volumes: Optional[List[List[float]]] = None
-    
-    def get_price_points(self) -> List[CoinGeckoPricePoint]:
-        """
-        Convierte la lista de prices a objetos CoinGeckoPricePoint.
-        """
-        return [CoinGeckoPricePoint.from_list(price_data) for price_data in self.prices]
 
-class MetalsApiResponse(BaseModel):
+# =============================================================================
+# MODELO NUEVO - GoldAPI.io
+# =============================================================================
+class GoldApiResponse(BaseModel):
     """
-    Modelo para la respuesta de la API de Metals-API.
-    """
-    success: bool
-    timestamp: int
-    historical: bool
-    base: str
-    date: str
-    rates: Dict[str, float]
+    Modelo para la respuesta de la API de GoldAPI.io
     
-    def get_xau_usd_rate(self) -> float:
+    Ejemplo de respuesta:
+    {
+        "timestamp": 1729785599,
+        "metal": "XAU",
+        "currency": "USD",
+        "exchange": "FOREXCOM",
+        "symbol": "FOREXCOM:XAUUSD",
+        "prev_close_price": 2737.845,
+        "open_price": 2748.225,
+        "low_price": 2723.845,
+        "high_price": 2758.905,
+        "open_time": 1729555200,
+        "price": 2738.15,
+        "ch": 0.305,
+        "chp": 0.01,
+        "ask": 2738.66,
+        "bid": 2737.64
+    }
+    """
+    timestamp: int = Field(..., description="Unix timestamp de la cotización")
+    metal: str = Field(..., description="Símbolo del metal (ej: XAU)")
+    currency: str = Field(..., description="Moneda de cotización (ej: USD)")
+    exchange: str = Field(..., description="Exchange de origen")
+    symbol: str = Field(..., description="Símbolo completo")
+    prev_close_price: float = Field(..., description="Precio de cierre anterior")
+    open_price: float = Field(..., description="Precio de apertura")
+    low_price: float = Field(..., description="Precio más bajo del día")
+    high_price: float = Field(..., description="Precio más alto del día")
+    open_time: int = Field(..., description="Timestamp de apertura")
+    price: float = Field(..., description="Precio actual")
+    ch: float = Field(..., description="Cambio absoluto")
+    chp: float = Field(..., description="Cambio porcentual")
+    ask: float = Field(..., description="Precio de venta")
+    bid: float = Field(..., description="Precio de compra")
+    
+    def get_price_usd(self) -> float:
         """
-        Obtiene la tasa XAU/USD y realiza el cálculo 1/valor para obtener USD por onza.
-        """
-        xau_usd_rate = self.rates.get('XAUUSD')
-        if xau_usd_rate is None:
-            raise ValueError("La respuesta no contiene la tasa XAUUSD")
+        Obtiene el precio del oro en USD por onza.
         
-        # Cálculo crítico: 1 / valor_recibido para obtener USD por onza
-        return 1.0 / xau_usd_rate
+        Returns:
+            Precio en USD
+        """
+        return self.price
 
 class AssetPriceRecord(BaseModel):
     """
@@ -77,7 +132,7 @@ class AssetPriceRecord(BaseModel):
     
     @validator('source_api')
     def validate_source_api(cls, v):
-        allowed_sources = ['coingecko', 'metals-api']
+        allowed_sources = ['goldapi']  # 'coingecko', 'metals-api' (COMENTADOS)
         if v not in allowed_sources:
             raise ValueError(f'source_api debe ser uno de: {allowed_sources}')
         return v

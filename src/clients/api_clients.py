@@ -5,133 +5,132 @@ import requests
 from typing import Optional, Dict, Any
 import logging
 
-from ..models.schemas import CoinGeckoResponse, MetalsApiResponse
+from ..models.schemas import GoldApiResponse  # CoinGeckoResponse, MetalsApiResponse (COMENTADOS)
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class CoinGeckoClient:
+# =============================================================================
+# COINGECKO CLIENT - COMENTADO PARA PRUEBAS
+# =============================================================================
+# class CoinGeckoClient:
+#     """
+#     Cliente para la API de CoinGecko.
+#     """
+#     
+#     BASE_URL = "https://api.coingecko.com/api/v3"
+#     
+#     def __init__(self, api_key: str):
+#         """
+#         Inicializa el cliente de CoinGecko.
+#         
+#         Args:
+#             api_key: API Key de CoinGecko
+#         """
+#         self.api_key = api_key
+#         self.session = requests.Session()
+#         if api_key:
+#             self.session.headers.update({'x-cg-demo-api-key': api_key})
+#     
+#     def get_bitcoin_price_in_range(self, from_timestamp: int, to_timestamp: int) -> CoinGeckoResponse:
+#         """
+#         Obtiene los precios de Bitcoin en un rango de tiempo.
+#         
+#         Args:
+#             from_timestamp: Timestamp de inicio en segundos (Unix)
+#             to_timestamp: Timestamp de fin en segundos (Unix)
+#         
+#         Returns:
+#             CoinGeckoResponse con los datos de precios
+#         
+#         Raises:
+#             requests.exceptions.RequestException: Si hay un error en la petición
+#             ValueError: Si la respuesta no es válida
+#         """
+#         endpoint = f"{self.BASE_URL}/coins/bitcoin/market_chart/range"
+#         params = {
+#             'vs_currency': 'usd',
+#             'from': from_timestamp,
+#             'to': to_timestamp
+#         }
+#         
+#         try:
+#             logger.info(f"Consultando CoinGecko API: from={from_timestamp}, to={to_timestamp}")
+#             response = self.session.get(endpoint, params=params, timeout=10)
+#             response.raise_for_status()
+#             
+#             data = response.json()
+#             logger.info(f"Respuesta de CoinGecko recibida: {len(data.get('prices', []))} puntos de precio")
+#             
+#             return CoinGeckoResponse(**data)
+#             
+#         except requests.exceptions.RequestException as e:
+#             logger.error(f"Error al consultar CoinGecko API: {e}")
+#             raise
+#         except Exception as e:
+#             logger.error(f"Error al procesar respuesta de CoinGecko: {e}")
+#             raise ValueError(f"Respuesta inválida de CoinGecko: {e}")
+
+
+# =============================================================================
+# GOLDAPI.IO CLIENT - NUEVO
+# =============================================================================
+class GoldApiClient:
     """
-    Cliente para la API de CoinGecko.
+    Cliente para la API de GoldAPI.io
     """
     
-    BASE_URL = "https://api.coingecko.com/api/v3"
+    BASE_URL = "https://www.goldapi.io/api"
     
     def __init__(self, api_key: str):
         """
-        Inicializa el cliente de CoinGecko.
+        Inicializa el cliente de GoldAPI.io.
         
         Args:
-            api_key: API Key de CoinGecko
+            api_key: API Key de GoldAPI.io
         """
         self.api_key = api_key
         self.session = requests.Session()
-        if api_key:
-            self.session.headers.update({'x-cg-demo-api-key': api_key})
+        self.session.headers.update({
+            'x-access-token': api_key,
+            'Content-Type': 'application/json'
+        })
     
-    def get_bitcoin_price_in_range(self, from_timestamp: int, to_timestamp: int) -> CoinGeckoResponse:
+    def get_gold_price(self, symbol: str = "XAU", currency: str = "USD") -> GoldApiResponse:
         """
-        Obtiene los precios de Bitcoin en un rango de tiempo.
+        Obtiene el precio actual del oro.
         
         Args:
-            from_timestamp: Timestamp de inicio en segundos (Unix)
-            to_timestamp: Timestamp de fin en segundos (Unix)
+            symbol: Símbolo del metal (default: "XAU" para oro)
+            currency: Moneda de cotización (default: "USD")
         
         Returns:
-            CoinGeckoResponse con los datos de precios
+            GoldApiResponse con los datos del oro
         
         Raises:
             requests.exceptions.RequestException: Si hay un error en la petición
             ValueError: Si la respuesta no es válida
         """
-        endpoint = f"{self.BASE_URL}/coins/bitcoin/market_chart/range"
-        params = {
-            'vs_currency': 'usd',
-            'from': from_timestamp,
-            'to': to_timestamp
-        }
+        endpoint = f"{self.BASE_URL}/{symbol}/{currency}"
         
         try:
-            logger.info(f"Consultando CoinGecko API: from={from_timestamp}, to={to_timestamp}")
-            response = self.session.get(endpoint, params=params, timeout=10)
+            logger.info(f"Consultando GoldAPI.io: {symbol}/{currency}")
+            response = self.session.get(endpoint, timeout=10)
             response.raise_for_status()
             
             data = response.json()
-            logger.info(f"Respuesta de CoinGecko recibida: {len(data.get('prices', []))} puntos de precio")
+            logger.info(f"Respuesta de GoldAPI.io recibida: precio={data.get('price', 'N/A')}")
             
-            return CoinGeckoResponse(**data)
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error al consultar CoinGecko API: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Error al procesar respuesta de CoinGecko: {e}")
-            raise ValueError(f"Respuesta inválida de CoinGecko: {e}")
-
-
-class MetalsApiClient:
-    """
-    Cliente para la API de Metals-API.
-    """
-    
-    BASE_URL = "https://metals-api.com/api"
-    
-    def __init__(self, api_key: str):
-        """
-        Inicializa el cliente de Metals-API.
-        
-        Args:
-            api_key: API Key de Metals-API
-        """
-        self.api_key = api_key
-        self.session = requests.Session()
-    
-    def get_gold_closing_price(self, date_str: str) -> MetalsApiResponse:
-        """
-        Obtiene el precio de cierre del oro para una fecha específica.
-        
-        Args:
-            date_str: Fecha en formato YYYY-MM-DD
-        
-        Returns:
-            MetalsApiResponse con los datos del oro
-        
-        Raises:
-            requests.exceptions.RequestException: Si hay un error en la petición
-            ValueError: Si la respuesta no es válida
-        """
-        endpoint = f"{self.BASE_URL}/{date_str}"
-        params = {
-            'access_key': self.api_key,
-            'base': 'USD',
-            'symbols': 'XAU'
-        }
-        
-        try:
-            logger.info(f"Consultando Metals API: date={date_str}")
-            response = self.session.get(endpoint, params=params, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            if not data.get('success', False):
-                error_info = data.get('error', {})
-                error_message = error_info.get('info', 'Error desconocido')
-                logger.error(f"Error en respuesta de Metals API: {error_message}")
-                raise ValueError(f"Metals API error: {error_message}")
-            
-            logger.info(f"Respuesta de Metals API recibida exitosamente")
-            
-            return MetalsApiResponse(**data)
+            return GoldApiResponse(**data)
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error al consultar Metals API: {e}")
+            logger.error(f"Error al consultar GoldAPI.io: {e}")
             raise
         except Exception as e:
-            logger.error(f"Error al procesar respuesta de Metals API: {e}")
-            raise ValueError(f"Respuesta inválida de Metals API: {e}")
+            logger.error(f"Error al procesar respuesta de GoldAPI.io: {e}")
+            raise ValueError(f"Respuesta inválida de GoldAPI.io: {e}")
 
 
 class GoogleSheetClient:

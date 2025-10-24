@@ -13,12 +13,12 @@ class Config:
     """
     
     # API Keys
-    COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY')
-    METALS_API_KEY = os.getenv('METALS_API_KEY')
+    # COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY')  # COMENTADO - No usado por ahora
+    GOLDAPI_KEY = os.getenv('GOLDAPI_KEY')  # NUEVO: GoldAPI.io
     
-    # MongoDB Configuration
-    MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017')
-    MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', 'btc_oro_db')
+    # MongoDB Configuration (COMENTADO - No usado por ahora)
+    # MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017')
+    # MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', 'btc_oro_db')
     
     # Google Sheets API
     GOOGLE_SHEET_API_URL = os.getenv('GOOGLE_SHEET_API_URL')
@@ -37,8 +37,7 @@ class Config:
         Valida que las variables de entorno críticas estén configuradas.
         """
         required_vars = [
-            ('COINGECKO_API_KEY', cls.COINGECKO_API_KEY),
-            ('METALS_API_KEY', cls.METALS_API_KEY),
+            ('GOLDAPI_KEY', cls.GOLDAPI_KEY),
             ('GOOGLE_SHEET_API_URL', cls.GOOGLE_SHEET_API_URL),
         ]
         

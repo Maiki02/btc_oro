@@ -1,6 +1,6 @@
 """
 Módulo de clientes de API.
 """
-from .api_clients import CoinGeckoClient, MetalsApiClient, GoogleSheetClient
+from .api_clients import GoldApiClient, GoogleSheetClient  # CoinGeckoClient, MetalsApiClient (COMENTADOS)
 
-__all__ = ['CoinGeckoClient', 'MetalsApiClient', 'GoogleSheetClient']
+__all__ = ['GoldApiClient', 'GoogleSheetClient']  # 'CoinGeckoClient', 'MetalsApiClient' (COMENTADOS)
