@@ -6,6 +6,8 @@ de documento diario unificado.
 from datetime import datetime
 import logging
 import pytz
+import threading
+import concurrent.futures
 
 from ..clients.api_clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient
 # from ..repositories.repository import PriceRepository  # COMENTADO - MongoDB
@@ -113,28 +115,32 @@ class PriceDataService:
             prices_data = {}
             
             # =========================================================================
-            # BITCOIN - COINGECKO API
+            # OBTENER PRECIOS EN PARALELO
+            # Ejecutar _fetch_bitcoin_price y _fetch_gold_price en threads
             # =========================================================================
-            btc_price = self._fetch_bitcoin_price(target_hour, now_art)
-            if btc_price:
-                prices_data['BTC'] = btc_price
-                records_processed += 1
-                logger.info(f"Precio de Bitcoin recolectado: ${btc_price['price_usd']}")
-            else:
-                errors.append("No se pudo obtener el precio de Bitcoin")
-            
-            # =========================================================================
-            # ORO - GOLDAPI.IO
-            # =========================================================================
-            xau_price = self._fetch_gold_price(target_hour, now_art)
-            # xau_price = { "price_usd": 0, "timestamp_utc": now_art.astimezone(pytz.utc), "source_api": "goldapi", "collection_time_art": now_art }
-            
-            if xau_price:
-                prices_data['XAU'] = xau_price
-                records_processed += 1
-                logger.info(f"Precio del Oro recolectado: ${xau_price['price_usd']}")
-            else:
-                errors.append("No se pudo obtener el precio del Oro")
+            prices_data_results = {}
+
+            def _run_fetch(fetch_fn, key):
+                try:
+                    return key, fetch_fn(target_hour, now_art)
+                except Exception as e:
+                    logger.error(f"Error en hilo de fetch para {key}: {e}", exc_info=True)
+                    return key, None
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [
+                    executor.submit(_run_fetch, self._fetch_bitcoin_price, 'BTC'),
+                    executor.submit(_run_fetch, self._fetch_gold_price, 'XAU')
+                ]
+
+                for fut in concurrent.futures.as_completed(futures):
+                    key, result = fut.result()
+                    if result:
+                        prices_data[key] = result
+                        records_processed += 1
+                        logger.info(f"Precio de {key} recolectado: ${result['price_usd']}")
+                    else:
+                        errors.append(f"No se pudo obtener el precio de {key}")
             
             # 5. Construir documento consolidado
             if prices_data:
@@ -155,23 +161,36 @@ class PriceDataService:
                     success = self.price_repository.save_price_record(daily_record)
                     if success:
                         logger.info(f"Documento guardado/actualizado en MongoDB")
-                        
+
                         # Recuperar documento actualizado de MongoDB
                         updated_record = self.price_repository.get_daily_prices(date_str)
-                        
+
                         if updated_record:
                             logger.info(f"Documento recuperado de MongoDB")
                             # Convertir dict a DailyPriceRecord para enviar a GoogleSheet
                             daily_record_from_db = DailyPriceRecord(**updated_record)
-                            self._send_to_google_sheets(daily_record_from_db)
+
+                            # Enviar a Google Sheets en background (no bloqueante)
+                            t = threading.Thread(
+                                target=self._send_to_google_sheets,
+                                args=(daily_record_from_db,)
+                            )
+                            t.daemon = True
+                            t.start()
+                            logger.info("Envio a GoogleSheet disparado en background (no bloqueante)")
                         else:
                             logger.warning(f"No se pudo recuperar documento de MongoDB")
                     else:
                         logger.error(f"Error al guardar documento en MongoDB")
                 else:
-                    # Si no hay repository (testing), enviar directamente
-                    logger.warning("Repository no disponible, enviando documento directamente")
-                    self._send_to_google_sheets(daily_record)
+                    # Si no hay repository (testing), enviar en background también (consistencia con flujo)
+                    logger.warning("Repository no disponible, enviando documento a GoogleSheet en background")
+                    t = threading.Thread(
+                        target=self._send_to_google_sheets,
+                        args=(daily_record,)
+                    )
+                    t.daemon = True
+                    t.start()
             
             # 6. Preparar respuesta
             success = records_processed > 0
