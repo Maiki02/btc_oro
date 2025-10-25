@@ -38,8 +38,24 @@ Write-Host ""
 
 # Paso 4: Instalar dependencias CON SALIDA VISIBLE
 Write-Host "Paso 4: Instalando dependencias..." -ForegroundColor Cyan
-Write-Host "Ejecutando: pip install -r ..\requirements.txt -t . --platform manylinux2014_x86_64 --python-version 3.11 --only-binary :all:" -ForegroundColor Yellow
-pip install -r ..\requirements.txt -t . --platform manylinux2014_x86_64 --python-version 3.11 --only-binary :all:
+
+# Determinar comando Python disponible (python o py)
+$pythonCmd = 'python'
+if (-not (Get-Command $pythonCmd -ErrorAction SilentlyContinue)) {
+    $pythonCmd = 'py'
+}
+
+if (-not (Get-Command $pythonCmd -ErrorAction SilentlyContinue)) {
+    Write-Host "ERROR: No se encontró 'python' ni 'py' en PATH. Instale Python (https://www.python.org/) o use un entorno con Python disponible." -ForegroundColor Red
+    cd ..
+    exit 1
+}
+
+# Ejecutar pip via módulo para evitar depender del ejecutable 'pip'
+$installCmd = "$pythonCmd -m pip install -r ..\requirements.txt -t . --platform manylinux2014_x86_64 --python-version 3.11 --only-binary :all:"
+Write-Host "Ejecutando: $installCmd" -ForegroundColor Yellow
+
+& $pythonCmd -m pip install -r ..\requirements.txt -t . --platform manylinux2014_x86_64 --python-version 3.11 --only-binary :all:
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR al instalar dependencias" -ForegroundColor Red
     Write-Host "Exit code: $LASTEXITCODE" -ForegroundColor Red
