@@ -122,35 +122,29 @@ class PriceRepository:
                 logger.warning("Colección MongoDB no disponible")
                 return False
             
-            # Construir el documento a insertar/actualizar
-            # Usar $pull para remover la entrada anterior (si existe)
-            # y $push para agregar la nueva
-            update_doc = {
-                "$pull": {
-                    f"prices.{asset}": {"hour": hour}  # Remover si existe
-                },
-                "$push": {
-                    f"prices.{asset}": price_entry_dict  # Añadir nueva
-                },
-                "$set": {
-                    "date": date,
-                    "updated_at": datetime.utcnow()
-                },
-                "$setOnInsert": {
-                    "created_at": datetime.utcnow()
-                }
-            }
-            
-            # Realizar el upsert
-            result = self.collection.update_one(
+            # OPERACIÓN 1: Remover entrada existente con la misma hora (si existe)
+            pull_result = self.collection.update_one(
                 {"date": date},
-                update_doc,
+                {
+                    "$pull": { f"prices.{asset}": {"hour": hour} },
+                    "$set": { "date": date, "updated_at": datetime.utcnow() },
+                    "$setOnInsert": { "created_at": datetime.utcnow() }
+                },
                 upsert=True
             )
             
-            if result.upserted_id:
-                logger.info(f"Documento creado para {date}: {result.upserted_id}")
-            elif result.modified_count > 0:
+            # OPERACIÓN 2: Agregar la nueva entrada
+            push_result = self.collection.update_one(
+                {"date": date},
+                {
+                    "$push": { f"prices.{asset}": price_entry_dict },
+                    "$set": { "updated_at": datetime.utcnow() }
+                }
+            )
+            
+            if pull_result.upserted_id:
+                logger.info(f"Documento creado para {date}: {pull_result.upserted_id}")
+            elif push_result.modified_count > 0:
                 logger.info(f"Documento actualizado para {date} - {asset}/hour_{hour}")
             else:
                 logger.debug(f"Sin cambios en documento para {date}")
@@ -178,33 +172,60 @@ class PriceRepository:
             if self.collection is None:
                 logger.warning("Colección MongoDB no disponible")
                 return False
-            
-            # Convertir el modelo Pydantic a dict
-            # mode='json' serializa datetimes a ISO 8601 strings, pero MongoDB los convierte de vuelta a objetos ISODate
+            # Convertir el modelo Pydantic a dict nativo
+            # mode='json' serializa datetimes a ISO 8601 strings
             record_dict = record.model_dump(mode='json')
-            
+
             logger.info(f"Guardando DailyPriceRecord para {record.date}:")
-            logger.info(f"  Activos: {list(record_dict['prices'].keys())}")
-            
-            # Realizar upsert completo
-            result = self.collection.update_one(
-                {"date": record.date},
-                {
-                    "$set": record_dict,
-                    "$setOnInsert": {
-                        "created_at": datetime.utcnow()
-                    }
-                },
-                upsert=True
-            )
-            
-            if result.upserted_id:
-                logger.info(f"✓ Documento creado: {result.upserted_id}")
-            elif result.modified_count > 0:
-                logger.info(f"✓ Documento actualizado")
-            else:
-                logger.info(f"✓ Documento sin cambios (ya existe)")
-            
+            logger.info(f"  Activos: {list(record_dict.get('prices', {}).keys())}")
+
+            # Para evitar reemplazar todo el documento (y perder entradas previas),
+            # iteramos por cada asset y cada entry y realizamos un upsert por entrada:
+            # 1) $pull para eliminar una posible entrada con la misma 'hour'
+            # 2) $push para añadir la nueva entrada
+            # Esto preserva entradas previas de horas distintas.
+
+            prices_map = record_dict.get('prices', {})
+
+            for asset_name, entries in prices_map.items():
+                for entry in entries:
+                    try:
+                        hour = entry.get('hour')
+
+                        # OPERACIÓN 1: Eliminar entrada existente con la misma hora (si existe)
+                        pull_result = self.collection.update_one(
+                            { "date": record.date },
+                            {
+                                "$pull": { f"prices.{asset_name}": {"hour": hour} },
+                                "$set": { 
+                                    "date": record.date, 
+                                    "date_art": record_dict.get('date_art'),
+                                    "updated_at": datetime.utcnow() 
+                                },
+                                "$setOnInsert": { "created_at": datetime.utcnow() }
+                            },
+                            upsert=True
+                        )
+
+                        # OPERACIÓN 2: Agregar la nueva entrada
+                        push_result = self.collection.update_one(
+                            { "date": record.date },
+                            {
+                                "$push": { f"prices.{asset_name}": entry },
+                                "$set": { "updated_at": datetime.utcnow() }
+                            }
+                        )
+
+                        if pull_result.upserted_id:
+                            logger.info(f"Documento creado para {record.date}: {pull_result.upserted_id} (asset={asset_name}, hour={hour})")
+                        elif push_result.modified_count > 0:
+                            logger.info(f"Documento actualizado para {record.date} - {asset_name}/hour_{hour}")
+                        else:
+                            logger.debug(f"Sin cambios para {record.date} - {asset_name}/hour_{hour}")
+
+                    except Exception as e:
+                        logger.error(f"Error al upsertear entrada {asset_name} hour={entry.get('hour')}: {e}")
+
             return True
             
         except PyMongoError as e:

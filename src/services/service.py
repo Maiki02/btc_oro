@@ -79,32 +79,12 @@ class PriceDataService:
             logger.info(f"Iniciando proceso de obtención de precios. Hora ART: {now_art}")
             
             # 2. Determinar la hora objetivo
-            # Elegir la última hora objetivo que ya ocurrió (más segura que "la más cercana en el futuro").
-            # Si ninguna hora objetivo es <= hora actual, se toma la última del día anterior.
+            # Ahora la hora objetivo es la hora actual (ej: si son 14:17 -> 14)
+            # Si se pasa explícitamente target_hour, se utiliza tal cual.
             if target_hour is None:
-                current_hour = now_art.hour
-                sorted_hours = sorted(Config.TARGET_HOURS)
-                # Si estamos exactamente en una hora objetivo, la usamos
-                if current_hour in sorted_hours:
-                    target_hour = current_hour
-                else:
-                    # Buscar la última hora objetivo que sea <= hora actual
-                    chosen = None
-                    for h in reversed(sorted_hours):
-                        if current_hour >= h:
-                            chosen = h
-                            break
-                    # Si no hay ninguna hora objetivo pasada hoy, tomar la última del día anterior
-                    target_hour = chosen if chosen is not None else sorted_hours[-1]
-            
-            if target_hour not in Config.TARGET_HOURS:
-                return ServiceResponse(
-                    success=False,
-                    message=f"Hora objetivo inválida: {target_hour}. Debe ser 10 o 17.",
-                    errors=[f"target_hour debe ser 10 o 17, recibido: {target_hour}"]
-                )
-            
-            logger.info(f"Hora objetivo: {target_hour}:00 ART")
+                target_hour = now_art.hour
+
+            logger.info(f"Hora objetivo (target_hour): {target_hour}:00 ART")
             
             # 3. Obtener fecha actual en formato YYYY-MM-DD (ART)
             date_str = get_art_date_string()
