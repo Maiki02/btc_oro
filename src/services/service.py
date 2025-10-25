@@ -6,7 +6,6 @@ de documento diario unificado.
 from datetime import datetime
 import logging
 import pytz
-import threading
 import concurrent.futures
 
 from ..clients.api_clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient
@@ -170,27 +169,27 @@ class PriceDataService:
                             # Convertir dict a DailyPriceRecord para enviar a GoogleSheet
                             daily_record_from_db = DailyPriceRecord(**updated_record)
 
-                            # Enviar a Google Sheets en background (no bloqueante)
-                            t = threading.Thread(
-                                target=self._send_to_google_sheets,
-                                args=(daily_record_from_db,)
-                            )
-                            t.daemon = True
-                            t.start()
-                            logger.info("Envio a GoogleSheet disparado en background (no bloqueante)")
+                            # Enviar a Google Sheets de forma sincrónica.
+                            # En Lambda es importante ejecutar la llamada antes de devolver
+                            # la respuesta, ya que los hilos en background pueden no
+                            # completarse si la función finaliza.
+                            try:
+                                self._send_to_google_sheets(daily_record_from_db)
+                                logger.info("Envio a GoogleSheet ejecutado de forma sincrónica")
+                            except Exception as e:
+                                logger.error(f"Error al enviar a GoogleSheet: {e}", exc_info=True)
                         else:
                             logger.warning(f"No se pudo recuperar documento de MongoDB")
                     else:
                         logger.error(f"Error al guardar documento en MongoDB")
                 else:
-                    # Si no hay repository (testing), enviar en background también (consistencia con flujo)
-                    logger.warning("Repository no disponible, enviando documento a GoogleSheet en background")
-                    t = threading.Thread(
-                        target=self._send_to_google_sheets,
-                        args=(daily_record,)
-                    )
-                    t.daemon = True
-                    t.start()
+                    # Si no hay repository (testing), enviar de forma sincrónica
+                    # para asegurar que la petición se complete antes de retornar.
+                    logger.warning("Repository no disponible, enviando documento a GoogleSheet de forma sincrónica")
+                    try:
+                        self._send_to_google_sheets(daily_record)
+                    except Exception as e:
+                        logger.error(f"Error al enviar a GoogleSheet: {e}", exc_info=True)
             
             # 6. Preparar respuesta
             success = records_processed > 0
