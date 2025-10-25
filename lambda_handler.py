@@ -138,80 +138,64 @@ def lambda_handler(event, context):
     Manejador principal de AWS Lambda.
     
     Este es el punto de entrada que AWS Lambda ejecuta. Recibe un evento
-    y un contexto, y debe retornar una respuesta.
+    y un contexto, y debe retornar una respuesta en formato de API Gateway.
     
-    Eventos esperados:
-    - De API Gateway: event['queryStringParameters']['hour']
-    - De CloudWatch: event['source'] == 'aws.events'
-    - Manual: event['action'] == 'trigger-fetch'
+    Endpoints soportados:
+    - GET /health
+    - GET /api/v1/health
+    - GET /api/v1/trigger-fetch
     
     Args:
-        event: Evento desencadenante (dict)
-        context: Contexto de ejecución de Lambda (objeto)
+        event: Evento desencadenante de API Gateway
+        context: Contexto de ejecución de Lambda
     
     Returns:
-        Diccionario con statusCode y body
-    
-    Ejemplos de eventos:
-    
-    # 1. Desde API Gateway GET /trigger-fetch?hour=10
-    {
-        "queryStringParameters": {"hour": "10"}
-    }
-    
-    # 2. Desde CloudWatch Events (cron job automático)
-    {
-        "source": "aws.events",
-        "detail-type": "Scheduled Event"
-    }
-    
-    # 3. Test manual
-    {
-        "action": "trigger-fetch"
-    }
+        Diccionario con statusCode, body y headers para API Gateway
     """
     
     global _price_handler
     
-    logger.info(f"Evento recibido: {json.dumps(event)}")
-    logger.info(f"Contexto: function_name={context.function_name}, "
-                f"invoked_function_arn={context.invoked_function_arn}")
-    
     try:
+        logger.info(f"Evento recibido: {json.dumps(event)}")
+        
         # Inicializar dependencias si es la primera invocación
         if _price_handler is None:
             _price_handler = _initialize_dependencies()
         
-        # Extraer parámetros de la query
-        query_params = _parse_query_parameters(event)
+        # Extraer información del evento de API Gateway
+        http_method = event.get('httpMethod', 'GET')
+        path = event.get('rawPath', '/')
+        query_string_params = event.get('queryStringParameters') or {}
         
-        logger.info(f"Query parameters: {query_params}")
+        logger.info(f"Método: {http_method}, Path: {path}")
         
-        # Determinar la acción a realizar
-        path = event.get('path', '/api/v1/trigger-fetch')
-        
-        # Enrutar la petición según el path
-        if '/trigger-fetch' in path or event.get('action') == 'trigger-fetch':
-            logger.info("Ejecutando trigger-fetch...")
-            handler_response = _price_handler.handle_trigger_fetch(query_params)
-        
-        elif '/health' in path or event.get('action') == 'health':
+        # Procesar según el path
+        if path == '/health' or path == '/api/v1/health':
             logger.info("Ejecutando health-check...")
             handler_response = _price_handler.handle_health_check()
+        
+        elif path == '/api/v1/trigger-fetch':
+            logger.info("Ejecutando trigger-fetch...")
+            handler_response = _price_handler.handle_trigger_fetch(query_string_params)
         
         else:
             logger.warning(f"Path no reconocido: {path}")
             return _create_response(404, {
                 'success': False,
                 'message': 'Endpoint no encontrado',
-                'path': path
+                'path': path,
+                'available_endpoints': [
+                    'GET /health',
+                    'GET /api/v1/health',
+                    'GET /api/v1/trigger-fetch?hour=10'
+                ]
             })
         
         # Convertir respuesta del handler al formato de API Gateway
         status_code = handler_response.get('status', 200)
         body = handler_response.get('body', {})
         
-        logger.info(f"Respuesta: status_code={status_code}")
+        logger.info(f"Respuesta exitosa: status_code={status_code}")
         
         return _create_response(status_code, body)
     

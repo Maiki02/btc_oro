@@ -10,10 +10,10 @@
 python-dotenv==1.0.0          # Cargar variables de entorno desde .env
 requests==2.31.0              # Realizar peticiones HTTP a APIs externas
 pytz==2023.3                  # Manejo de zonas horarias
-pydantic==2.5.0               # Validación de datos con esquemas
+pydantic==2.4.2               # Validación de datos (versión con wheels precompilados)
 
 # DATABASE - Acceso a base de datos
-pymongo==4.6.0                # Driver de MongoDB
+pymongo==4.5.0                # Driver de MongoDB (versión sin compilación Rust)
 
 # AWS - Para desarrollo/testing con Lambda (opcional)
 # NOTA: AWS SDK (boto3) ya viene preinstalado en Lambda
