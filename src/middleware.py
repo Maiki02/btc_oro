@@ -22,12 +22,6 @@ class AuthMiddleware:
     # Header donde se espera recibir la API Key
     API_KEY_HEADER = 'X-API-Key'
     
-    # Paths públicos que NO requieren autenticación
-    PUBLIC_PATHS = [
-        '/health',
-        '/api/v1/health'
-    ]
-    
     @classmethod
     def validate_api_key(
         cls,
@@ -47,17 +41,11 @@ class AuthMiddleware:
             - error_message: Mensaje de error si la validación falla, None si es exitosa
         """
         
-        # Verificar si el path es público (no requiere autenticación)
-        if cls._is_public_path(path):
-            logger.debug(f"Path público, no requiere autenticación: {path}")
-            return True, None
-        
         # Verificar que la API Key esté configurada en el servidor
         configured_api_key = Config.API_KEY
         if not configured_api_key:
-            logger.warning("⚠️  API_KEY no configurada en variables de entorno")
-            # Si no está configurada, permitir acceso (modo desarrollo)
-            return True, None
+            logger.error("❌ API_KEY no configurada en variables de entorno")
+            return False, "Server configuration error: API_KEY not set"
         
         # Normalizar headers (API Gateway puede enviar headers en diferentes formatos)
         normalized_headers = cls._normalize_headers(headers)
@@ -77,19 +65,6 @@ class AuthMiddleware:
         # Autenticación exitosa
         logger.debug("✓ Autenticación exitosa")
         return True, None
-    
-    @classmethod
-    def _is_public_path(cls, path: str) -> bool:
-        """
-        Verifica si un path es público (no requiere autenticación).
-        
-        Args:
-            path: Path del endpoint
-        
-        Returns:
-            True si el path es público, False en caso contrario
-        """
-        return path in cls.PUBLIC_PATHS
     
     @classmethod
     def _normalize_headers(cls, headers: Dict[str, str]) -> Dict[str, str]:
