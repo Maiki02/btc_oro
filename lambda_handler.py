@@ -166,6 +166,8 @@ def lambda_handler(event, context):
         headers = event.get('headers') or {}
         
         logger.info(f"Método: {http_method}, Path: {path}")
+        logger.info(f"Headers recibidos: {json.dumps(headers)}")
+        logger.info(f"API_KEY configurada: {Config.API_KEY[:10] if Config.API_KEY else 'NO CONFIGURADA'}...")
         
         # =========================================================================
         # VALIDAR AUTENTICACIÓN (MIDDLEWARE)
