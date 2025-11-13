@@ -92,7 +92,7 @@ class PriceHandler:
             'status': 200,
             'body': {
                 'success': True,
-                'version': "0.1.1",
+                'version': "0.2.0",
                 'message': 'Service is running',
                 'service': 'BTC-Oro Price Fetcher'
             }
