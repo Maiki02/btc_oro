@@ -16,6 +16,9 @@ class Config:
     COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY')
     GOLDAPI_KEY = os.getenv('GOLDAPI_KEY')
     
+    # Security - API Authentication
+    API_KEY = os.getenv('API_KEY')  # API Key para autenticar requests
+    
     # MongoDB Configuration
     MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017')
     MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', 'btc_oro_db')
@@ -39,6 +42,7 @@ class Config:
         required_vars = [
             ('GOLDAPI_KEY', cls.GOLDAPI_KEY),
             ('GOOGLE_SHEET_API_URL', cls.GOOGLE_SHEET_API_URL),
+            ('API_KEY', cls.API_KEY),
         ]
         
         missing_vars = []

@@ -12,6 +12,7 @@ from src.repositories import PriceRepository
 from src.services import PriceDataService
 from src.handlers import PriceHandler
 from src.routes import Router
+from src.middleware import AuthMiddleware
 
 # Configurar logging
 logging.basicConfig(
@@ -38,6 +39,24 @@ class RequestHandler(BaseHTTPRequestHandler):
             parsed_url = urlparse(self.path)
             path = parsed_url.path
             query_string = parsed_url.query
+            
+            # =========================================================================
+            # VALIDAR AUTENTICACIÓN (MIDDLEWARE)
+            # =========================================================================
+            # Convertir headers HTTP a diccionario
+            headers = {key: value for key, value in self.headers.items()}
+            
+            is_valid, error_message = AuthMiddleware.validate_api_key(headers, path)
+            
+            if not is_valid:
+                logger.warning(f"Autenticación fallida: {error_message}")
+                response = AuthMiddleware.create_unauthorized_response(error_message)
+                self._send_response(response)
+                return
+            
+            # =========================================================================
+            # AUTENTICACIÓN EXITOSA - PROCESAR REQUEST
+            # =========================================================================
             
             # Enrutar la petición
             response = self.router.route_request('GET', path, query_string)

@@ -19,6 +19,7 @@ from src.clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient
 from src.repositories import PriceRepository
 from src.services import PriceDataService
 from src.handlers import PriceHandler
+from src.middleware import AuthMiddleware
 
 # Configurar logging
 logger = logging.getLogger()
@@ -158,16 +159,31 @@ def lambda_handler(event, context):
     try:
         logger.info(f"Evento recibido: {json.dumps(event)}")
         
+        # Extraer información del evento de API Gateway
+        http_method = event.get('httpMethod', 'GET')
+        path = event.get('rawPath') or event.get('path', '/')
+        query_string_params = event.get('queryStringParameters') or {}
+        headers = event.get('headers') or {}
+        
+        logger.info(f"Método: {http_method}, Path: {path}")
+        
+        # =========================================================================
+        # VALIDAR AUTENTICACIÓN (MIDDLEWARE)
+        # =========================================================================
+        is_valid, error_message = AuthMiddleware.validate_api_key(headers, path)
+        
+        if not is_valid:
+            logger.warning(f"Autenticación fallida: {error_message}")
+            response = AuthMiddleware.create_unauthorized_response(error_message)
+            return _create_response(response['status'], response['body'])
+        
+        # =========================================================================
+        # AUTENTICACIÓN EXITOSA - PROCESAR REQUEST
+        # =========================================================================
+        
         # Inicializar dependencias si es la primera invocación
         if _price_handler is None:
             _price_handler = _initialize_dependencies()
-        
-        # Extraer información del evento de API Gateway
-        http_method = event.get('httpMethod', 'GET')
-        path = event.get('rawPath', '/')
-        query_string_params = event.get('queryStringParameters') or {}
-        
-        logger.info(f"Método: {http_method}, Path: {path}")
         
         # Procesar según el path
         if path == '/health' or path == '/api/v1/health':
