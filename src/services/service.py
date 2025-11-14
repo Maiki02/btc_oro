@@ -9,6 +9,7 @@ import pytz
 import concurrent.futures
 
 from ..clients.api_clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient
+from ..clients.telegram_client import TelegramClient
 # from ..repositories.repository import PriceRepository  # COMENTADO - MongoDB
 from ..models.schemas import (
     PriceEntry, DailyPriceRecord, GoogleSheetRecord, ServiceResponse, AssetPriceRecord
@@ -38,6 +39,7 @@ class PriceDataService:
         coingecko_client: CoinGeckoClient,
         goldapi_client: GoldApiClient,
         google_sheet_client: GoogleSheetClient,
+        telegram_client: TelegramClient = None,
         price_repository=None  # INYECTADO - MongoDB (opcional para testing)
     ):
         """
@@ -47,11 +49,13 @@ class PriceDataService:
             coingecko_client: Cliente para la API de CoinGecko
             goldapi_client: Cliente para la API de GoldAPI.io
             google_sheet_client: Cliente para Google Sheets
+            telegram_client: Cliente para notificaciones Telegram (opcional)
             price_repository: Repository para MongoDB (opcional)
         """
         self.coingecko_client = coingecko_client
         self.goldapi_client = goldapi_client
         self.google_sheet_client = google_sheet_client
+        self.telegram_client = telegram_client
         self.price_repository = price_repository
     
     def fetch_and_store_prices(self, target_hour: int = None) -> ServiceResponse:
@@ -149,27 +153,58 @@ class PriceDataService:
                             # Convertir dict a DailyPriceRecord para enviar a GoogleSheet
                             daily_record_from_db = DailyPriceRecord(**updated_record)
 
-                            # Enviar a Google Sheets de forma sincrónica.
-                            # En Lambda es importante ejecutar la llamada antes de devolver
-                            # la respuesta, ya que los hilos en background pueden no
-                            # completarse si la función finaliza.
-                            try:
-                                self._send_to_google_sheets(daily_record_from_db)
-                                logger.info("Envio a GoogleSheet ejecutado de forma sincrónica")
-                            except Exception as e:
-                                logger.error(f"Error al enviar a GoogleSheet: {e}", exc_info=True)
+                            # =========================================================================
+                            # ENVIAR A GOOGLE SHEETS Y TELEGRAM EN PARALELO
+                            # =========================================================================
+                            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                                # Enviar a Google Sheets
+                                sheet_future = executor.submit(self._send_to_google_sheets, daily_record_from_db)
+                                
+                                # Enviar notificación Telegram
+                                telegram_future = executor.submit(
+                                    self._send_telegram_notification, 
+                                    current_hour, 
+                                    prices_data
+                                )
+                                
+                                # Esperar a que ambas terminen
+                                try:
+                                    sheet_future.result(timeout=15)
+                                    logger.info("✓ Envio a GoogleSheet completado")
+                                except Exception as e:
+                                    logger.error(f"Error al enviar a GoogleSheet: {e}", exc_info=True)
+                                
+                                try:
+                                    telegram_future.result(timeout=15)
+                                    logger.info("✓ Notificación Telegram completada")
+                                except Exception as e:
+                                    logger.error(f"Error al enviar notificación Telegram: {e}", exc_info=True)
                         else:
                             logger.warning(f"No se pudo recuperar documento de MongoDB")
                     else:
                         logger.error(f"Error al guardar documento en MongoDB")
                 else:
-                    # Si no hay repository (testing), enviar de forma sincrónica
-                    # para asegurar que la petición se complete antes de retornar.
-                    logger.warning("Repository no disponible, enviando documento a GoogleSheet de forma sincrónica")
-                    try:
-                        self._send_to_google_sheets(daily_record)
-                    except Exception as e:
-                        logger.error(f"Error al enviar a GoogleSheet: {e}", exc_info=True)
+                    # Si no hay repository (testing), enviar en paralelo de forma sincrónica
+                    # para asegurar que las peticiones se completen antes de retornar.
+                    logger.warning("Repository no disponible, enviando a GoogleSheet y Telegram")
+                    
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                        sheet_future = executor.submit(self._send_to_google_sheets, daily_record)
+                        telegram_future = executor.submit(
+                            self._send_telegram_notification, 
+                            current_hour, 
+                            prices_data
+                        )
+                        
+                        try:
+                            sheet_future.result(timeout=15)
+                        except Exception as e:
+                            logger.error(f"Error al enviar a GoogleSheet: {e}", exc_info=True)
+                        
+                        try:
+                            telegram_future.result(timeout=15)
+                        except Exception as e:
+                            logger.error(f"Error al enviar notificación Telegram: {e}", exc_info=True)
             
             # 6. Preparar respuesta
             success = records_processed > 0
@@ -445,3 +480,43 @@ class PriceDataService:
         
         except Exception as e:
             logger.error(f"Error al enviar documento a GoogleSheet: {e}", exc_info=True)
+    
+    def _send_telegram_notification(
+        self,
+        hour: int,
+        prices_data: dict
+    ):
+        """
+        Envía una notificación de precios a Telegram.
+        
+        Args:
+            hour: Hora a la que se obtuvieron los precios (0-23)
+            prices_data: Dict con {asset: {price_usd, timestamp_utc, ...}}
+                        Ejemplo: {'BTC': {'price_usd': 43250.75, ...}, 'XAU': {...}}
+        """
+        try:
+            # Verificar si el cliente de Telegram está disponible
+            if not self.telegram_client:
+                logger.debug("TelegramClient no configurado, omitiendo notificación")
+                return
+            
+            logger.info(f"Enviando notificación Telegram para hora {hour}")
+            
+            # Extraer precios de BTC y XAU
+            btc_price = prices_data.get('BTC', {}).get('price_usd')
+            xau_price = prices_data.get('XAU', {}).get('price_usd')
+            
+            # Enviar notificación
+            success = self.telegram_client.send_price_notification(
+                hour=hour,
+                btc_price=btc_price,
+                xau_price=xau_price
+            )
+            
+            if success:
+                logger.info(f"✓ Notificación Telegram enviada exitosamente")
+            else:
+                logger.warning(f"⚠ No se pudo enviar notificación Telegram (ver logs del cliente)")
+        
+        except Exception as e:
+            logger.error(f"Error al enviar notificación Telegram: {e}", exc_info=True)

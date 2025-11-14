@@ -7,7 +7,7 @@ import logging
 from urllib.parse import urlparse
 
 from src.config import Config
-from src.clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient
+from src.clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient, TelegramClient
 from src.repositories import PriceRepository
 from src.services import PriceDataService
 from src.handlers import PriceHandler
@@ -145,6 +145,20 @@ def initialize_dependencies():
     goldapi_client = GoldApiClient(Config.GOLDAPI_KEY)
     google_sheet_client = GoogleSheetClient(Config.GOOGLE_SHEET_API_URL)
     
+    # Inicializar cliente de Telegram (opcional)
+    telegram_client = None
+    if Config.TELEGRAM_API_URL and Config.TELEGRAM_API_KEY:
+        try:
+            telegram_client = TelegramClient(
+                api_url=Config.TELEGRAM_API_URL,
+                api_key=Config.TELEGRAM_API_KEY
+            )
+            logger.info("✓ TelegramClient inicializado correctamente")
+        except Exception as e:
+            logger.warning(f"⚠️  No se pudo inicializar TelegramClient: {e}")
+    else:
+        logger.warning("⚠️  TELEGRAM_API_URL o TELEGRAM_API_KEY no configuradas")
+    
     # Inicializar repositorio
     try:
         price_repository = PriceRepository(
@@ -162,6 +176,7 @@ def initialize_dependencies():
         coingecko_client=coingecko_client,
         goldapi_client=goldapi_client,
         google_sheet_client=google_sheet_client,
+        telegram_client=telegram_client,
         price_repository=price_repository
     )
     

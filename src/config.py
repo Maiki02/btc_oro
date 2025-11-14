@@ -19,6 +19,10 @@ class Config:
     # Security - API Authentication
     API_KEY = os.getenv('API_KEY')  # API Key para autenticar requests
     
+    # Telegram Bot - Notifications
+    TELEGRAM_API_URL = os.getenv('TELEGRAM_API_URL')
+    TELEGRAM_API_KEY = os.getenv('TELEGRAM_API_KEY')
+    
     # MongoDB Configuration
     MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017')
     MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', 'btc_oro_db')

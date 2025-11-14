@@ -15,7 +15,7 @@ from urllib.parse import parse_qs
 
 # Importar dependencias del proyecto
 from src.config import Config
-from src.clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient
+from src.clients import CoinGeckoClient, GoldApiClient, GoogleSheetClient, TelegramClient
 from src.repositories import PriceRepository
 from src.services import PriceDataService
 from src.handlers import PriceHandler
@@ -52,6 +52,20 @@ def _initialize_dependencies():
         
         logger.info("✓ Clientes de API inicializados")
         
+        # Inicializar cliente de Telegram (opcional)
+        telegram_client = None
+        if Config.TELEGRAM_API_URL and Config.TELEGRAM_API_KEY:
+            try:
+                telegram_client = TelegramClient(
+                    api_url=Config.TELEGRAM_API_URL,
+                    api_key=Config.TELEGRAM_API_KEY
+                )
+                logger.info("✓ TelegramClient inicializado")
+            except Exception as e:
+                logger.warning(f"⚠️  No se pudo inicializar TelegramClient: {e}")
+        else:
+            logger.warning("⚠️  TELEGRAM_API_URL o TELEGRAM_API_KEY no configuradas")
+        
         # Inicializar repositorio (MongoDB)
         try:
             price_repository = PriceRepository(
@@ -68,6 +82,7 @@ def _initialize_dependencies():
             coingecko_client=coingecko_client,
             goldapi_client=goldapi_client,
             google_sheet_client=google_sheet_client,
+            telegram_client=telegram_client,
             price_repository=price_repository
         )
         
