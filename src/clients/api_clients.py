@@ -57,13 +57,11 @@ class CoinGeckoClient:
         }
         
         try:
-            logger.info(f"Consultando CoinGecko API: from={from_timestamp}, to={to_timestamp}")
             # Timeout de 15 segundos (CoinGecko suele ser rápido)
             response = self.session.get(endpoint, params=params, timeout=15)
             response.raise_for_status()
             
             data = response.json()
-            logger.info(f"Respuesta de CoinGecko recibida: {len(data.get('prices', []))} puntos de precio")
             
             return CoinGeckoResponse(**data)
             
@@ -225,7 +223,6 @@ class GoogleSheetClient:
                 return False
             
             logger.info(f"Enviando DailyPriceRecord a Google Sheets para fecha: {daily_record_dict.get('date')}")
-            logger.debug(f"Payload: {daily_record_dict}")
             
             # POST directo a la URL con la estructura completa
             response = self.session.post(

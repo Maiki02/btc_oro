@@ -46,19 +46,13 @@ class AuthMiddleware:
         if not configured_api_key:
             logger.error("❌ API_KEY no configurada en variables de entorno")
             return False, "Server configuration error: API_KEY not set"
-        
-        logger.info(f"API_KEY configurada (primeros 10 chars): {configured_api_key[:10]}...")
-        
+                
         # Normalizar headers (API Gateway puede enviar headers en diferentes formatos)
         normalized_headers = cls._normalize_headers(headers)
-        
-        logger.info(f"Headers normalizados: {list(normalized_headers.keys())}")
-        
+                
         # Extraer la API Key del header
         provided_api_key = normalized_headers.get(cls.API_KEY_HEADER.lower())
-        
-        logger.info(f"API Key proporcionada: {provided_api_key[:10] if provided_api_key else 'NO PROPORCIONADA'}...")
-        
+                
         if not provided_api_key:
             logger.warning(f"Request sin API Key en header '{cls.API_KEY_HEADER}'")
             return False, f"Missing authentication header: {cls.API_KEY_HEADER}"
@@ -70,7 +64,6 @@ class AuthMiddleware:
             return False, "Invalid API Key"
         
         # Autenticación exitosa
-        logger.debug("✓ Autenticación exitosa")
         return True, None
     
     @classmethod

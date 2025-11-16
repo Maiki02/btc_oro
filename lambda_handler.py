@@ -50,8 +50,6 @@ def _initialize_dependencies():
         goldapi_client = GoldApiClient(Config.GOLDAPI_KEY)
         google_sheet_client = GoogleSheetClient(Config.GOOGLE_SHEET_API_URL)
         
-        logger.info("✓ Clientes de API inicializados")
-        
         # Inicializar cliente de Telegram (opcional)
         telegram_client = None
         if Config.TELEGRAM_API_URL and Config.TELEGRAM_API_KEY:
@@ -60,7 +58,6 @@ def _initialize_dependencies():
                     api_url=Config.TELEGRAM_API_URL,
                     api_key=Config.TELEGRAM_API_KEY
                 )
-                logger.info("✓ TelegramClient inicializado")
             except Exception as e:
                 logger.warning(f"⚠️  No se pudo inicializar TelegramClient: {e}")
         else:
@@ -182,7 +179,6 @@ def lambda_handler(event, context):
         
         logger.info(f"Método: {http_method}, Path: {path}")
         logger.info(f"Headers recibidos: {json.dumps(headers)}")
-        logger.info(f"API_KEY configurada: {Config.API_KEY[:10] if Config.API_KEY else 'NO CONFIGURADA'}...")
         
         # =========================================================================
         # VALIDAR AUTENTICACIÓN (MIDDLEWARE)

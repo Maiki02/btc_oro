@@ -129,7 +129,6 @@ def initialize_dependencies():
     Returns:
         Instancia del Router configurado
     """
-    logger.info("Inicializing dependencies...")
     
     # Validar configuración (COMENTADO para pruebas)
     # try:
@@ -153,7 +152,6 @@ def initialize_dependencies():
                 api_url=Config.TELEGRAM_API_URL,
                 api_key=Config.TELEGRAM_API_KEY
             )
-            logger.info("✓ TelegramClient inicializado correctamente")
         except Exception as e:
             logger.warning(f"⚠️  No se pudo inicializar TelegramClient: {e}")
     else:
@@ -165,7 +163,6 @@ def initialize_dependencies():
             mongo_uri=Config.MONGO_URI,
             db_name=Config.MONGO_DB_NAME
         )
-        logger.info("✓ Repository MongoDB inicializado correctamente")
     except Exception as e:
         logger.error(f"Error al conectar MongoDB: {e}")
         logger.warning("⚠️  MongoDB no disponible. El servicio continuará pero sin persistencia.")
@@ -185,10 +182,7 @@ def initialize_dependencies():
     
     # Inicializar router
     router = Router(price_handler)
-    
-    logger.info("Dependencias inicializadas correctamente")
-    logger.info(f"Rutas disponibles: {router.get_available_routes()}")
-    
+        
     return router
 
 
@@ -206,10 +200,7 @@ def run_server():
         # Configurar y arrancar el servidor
         server_address = ('', Config.SERVER_PORT)
         httpd = HTTPServer(server_address, RequestHandler)
-        
-        logger.info(f"Servidor iniciado en http://localhost:{Config.SERVER_PORT}")
-        logger.info("Presiona Ctrl+C para detener el servidor")
-        
+                
         # Imprimir información útil
         print("\n" + "="*60)
         print(f"🚀 Servidor BTC-Oro ejecutándose en puerto {Config.SERVER_PORT}")

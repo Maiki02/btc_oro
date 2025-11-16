@@ -80,7 +80,6 @@ class PriceDataService:
         try:
             # 1. Obtener la hora actual en ART
             now_art = get_current_time_art()
-            logger.info(f"Iniciando proceso de obtención de precios. Hora ART: {now_art}")
             
             # 2. Determinar la hora objetivo
             # Ahora la hora objetivo es la hora actual (ej: si son 14:17 -> 14)
@@ -88,11 +87,9 @@ class PriceDataService:
             if target_hour is None:
                 target_hour = now_art.hour
 
-            logger.info(f"Hora objetivo (target_hour): {target_hour}:00 ART")
             
             # 3. Obtener fecha actual en formato YYYY-MM-DD (ART)
             date_str = get_art_date_string()
-            logger.info(f"Fecha para documento consolidado: {date_str}")
             
             # 4. Recolectar precios de ambos activos
             prices_data = {}
@@ -121,7 +118,6 @@ class PriceDataService:
                     if result:
                         prices_data[key] = result
                         records_processed += 1
-                        logger.info(f"Precio de {key} recolectado: ${result['price_usd']}")
                     else:
                         errors.append(f"No se pudo obtener el precio de {key}")
             
@@ -135,7 +131,6 @@ class PriceDataService:
                     date_str, current_hour, prices_data, now_art
                 )
                 
-                logger.info(f"Documento consolidado preparado para {date_str} (hora {current_hour})")
                 
                 # =========================================================================
                 # GUARDAR O ACTUALIZAR EN MONGODB (UPSERT)
@@ -143,13 +138,11 @@ class PriceDataService:
                 if self.price_repository:
                     success = self.price_repository.save_price_record(daily_record)
                     if success:
-                        logger.info(f"Documento guardado/actualizado en MongoDB")
 
                         # Recuperar documento actualizado de MongoDB
                         updated_record = self.price_repository.get_daily_prices(date_str)
 
                         if updated_record:
-                            logger.info(f"Documento recuperado de MongoDB")
                             # Convertir dict a DailyPriceRecord para enviar a GoogleSheet
                             daily_record_from_db = DailyPriceRecord(**updated_record)
 
@@ -170,13 +163,11 @@ class PriceDataService:
                                 # Esperar a que ambas terminen
                                 try:
                                     sheet_future.result(timeout=15)
-                                    logger.info("✓ Envio a GoogleSheet completado")
                                 except Exception as e:
                                     logger.error(f"Error al enviar a GoogleSheet: {e}", exc_info=True)
                                 
                                 try:
                                     telegram_future.result(timeout=15)
-                                    logger.info("✓ Notificación Telegram completada")
                                 except Exception as e:
                                     logger.error(f"Error al enviar notificación Telegram: {e}", exc_info=True)
                         else:
@@ -462,7 +453,6 @@ class PriceDataService:
             daily_record: DailyPriceRecord consolidado (desde MongoDB o local)
         """
         try:
-            logger.info(f"Enviando DailyPriceRecord a GoogleSheet: {daily_record.date}")
             
             # Serializar a dict con datetimes convertidos a ISO 8601 strings
             # mode='json' convierte datetimes automáticamente
@@ -473,9 +463,7 @@ class PriceDataService:
             # Enviar POST a la URL de Google Apps Script
             success = self.google_sheet_client.save_record(serialized_record)
             
-            if success:
-                logger.info(f"✓ Documento enviado a GoogleSheet exitosamente")
-            else:
+            if not success:
                 logger.warning(f"⚠ No se pudo enviar documento a GoogleSheet (ver logs del cliente)")
         
         except Exception as e:
@@ -500,7 +488,6 @@ class PriceDataService:
                 logger.debug("TelegramClient no configurado, omitiendo notificación")
                 return
             
-            logger.info(f"Enviando notificación Telegram para hora {hour}")
             
             # Extraer precios de BTC y XAU
             btc_price = prices_data.get('BTC', {}).get('price_usd')
@@ -513,9 +500,7 @@ class PriceDataService:
                 xau_price=xau_price
             )
             
-            if success:
-                logger.info(f"✓ Notificación Telegram enviada exitosamente")
-            else:
+            if not success:
                 logger.warning(f"⚠ No se pudo enviar notificación Telegram (ver logs del cliente)")
         
         except Exception as e:
